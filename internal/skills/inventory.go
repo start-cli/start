@@ -26,6 +26,16 @@ func InventoryPath(configDir string) string {
 	return filepath.Join(configDir, internalcue.ConfigFiles[internalcue.KeySkills])
 }
 
+// InstallCommand is the no-`--agent` rematerialise for key. Local must be
+// set or the write hits the global inventory.
+func InstallCommand(key string, local bool) string {
+	cmd := "start install skills:" + key
+	if local {
+		cmd += " --local"
+	}
+	return cmd
+}
+
 // Load reads skills.cue from configDir. A missing file is an empty inventory.
 func Load(configDir string) (map[string]Entry, error) {
 	path := InventoryPath(configDir)

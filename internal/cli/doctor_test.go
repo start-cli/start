@@ -169,7 +169,7 @@ func TestPrepareDoctor(t *testing.T) {
 
 	chdir(t, tmpDir)
 
-	report, err := prepareDoctor(registry.NewClient, nil)
+	report, err := prepareDoctor(NewRootCmd(), registry.NewClient, nil)
 	if err != nil {
 		t.Fatalf("prepareDoctor() error = %v", err)
 	}
@@ -230,7 +230,7 @@ contexts: {
 
 	chdir(t, tmpDir)
 
-	report, err := prepareDoctor(registry.NewClient, nil)
+	report, err := prepareDoctor(NewRootCmd(), registry.NewClient, nil)
 	if err != nil {
 		t.Fatalf("prepareDoctor() error = %v", err)
 	}

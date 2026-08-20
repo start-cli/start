@@ -33,10 +33,14 @@ Array of installed-module objects. Empty result is `[]`.
 
 ```
 [{ category, name, scope, origin, configFile,
-   description?, tags?, models?, version?, latestVersion?, updateAvailable? }]
+   description?, tags?, models?, version?, latestVersion?, updateAvailable?, status? }]
 ```
 
 `version`/`latestVersion`/`updateAvailable` populate only under `--verbose`.
+`status` is `"missing"` only when dest presence was checked and no `SKILL.md`
+was found under that scope's uninstall-candidate paths. It is omitted when the
+dest is present, when presence could not be checked (agent catalog unavailable,
+or a dest Stat error), and on every non-skill category.
 
 ### library [category]
 

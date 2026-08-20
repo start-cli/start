@@ -6,6 +6,16 @@ import (
 	"testing"
 )
 
+func TestInstallCommand(t *testing.T) {
+	t.Parallel()
+	if got := InstallCommand("workflows/one-by-one", false); got != "start install skills:workflows/one-by-one" {
+		t.Errorf("global = %q", got)
+	}
+	if got := InstallCommand("workflows/one-by-one", true); got != "start install skills:workflows/one-by-one --local" {
+		t.Errorf("local = %q", got)
+	}
+}
+
 func TestInventoryUpsertLoadRemove(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

@@ -29,6 +29,7 @@ Checks performed:
   - Schema validation (fetched from registry)
   - Agent binary availability
   - Context and role file existence
+  - Skills inventory dest health and SKILL.md frontmatter
   - Environment (directory permissions)
 
 Exit codes:
@@ -49,7 +50,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	if shown, err := checkHelpArg(cmd, args); shown || err != nil {
 		return err
 	}
-	report, err := prepareDoctor(getProvider(cmd), reservedCommandNames(cmd.Root()))
+	report, err := prepareDoctor(cmd, getProvider(cmd), reservedCommandNames(cmd.Root()))
 	if err != nil {
 		return err
 	}
@@ -93,7 +94,7 @@ func (e *doctorError) Silent() bool  { return true }
 // prepareDoctor runs all checks and builds the report. The provider supplies the
 // registry client so tests can run doctor offline against a stub. reserved is the
 // live command-name set, so the alias check can flag a name a command shadows.
-func prepareDoctor(provider clientProvider, reserved map[string]bool) (doctor.Report, error) {
+func prepareDoctor(cmd *cobra.Command, provider clientProvider, reserved map[string]bool) (doctor.Report, error) {
 	var report doctor.Report
 
 	report.Sections = append(report.Sections, doctor.CheckIntro())
@@ -185,11 +186,25 @@ func prepareDoctor(provider clientProvider, reserved map[string]bool) (doctor.Re
 		})
 	}
 
+	scan := doctor.SkillDestScan{}
+	if needsSkillDestScan(paths) {
+		scan = skillDestScan(cmd)
+	}
+	report.Sections = append(report.Sections, doctor.CheckSkills(paths, scan))
+
 	report.Sections = append(report.Sections, doctor.CheckAliases(config.AliasStorePath(paths), reserved))
 
 	report.Sections = append(report.Sections, doctor.CheckEnvironment(paths))
 
 	return report, nil
+}
+
+func skillDestScan(cmd *cobra.Command) doctor.SkillDestScan {
+	global, local, err := scanSkillUninstallRoots(cmd)
+	if err != nil {
+		return doctor.SkillDestScan{Scanned: true, Err: err}
+	}
+	return doctor.SkillDestScan{Scanned: true, Global: global, Local: local}
 }
 
 func fetchAndValidateSchemas(paths config.Paths, provider clientProvider) doctor.SectionResult {

@@ -275,22 +275,26 @@ func TestInstallSkillDoesNotWriteAgentsCue(t *testing.T) {
 	}
 }
 
-func TestListAndConfigRejectSkills(t *testing.T) {
+func TestConfigAddRejectsSkills(t *testing.T) {
 	_, stub := setupStartTestConfigWithRegistry(t, skillTestIndex())
 
-	_, _, err := captureStreams(t, stub, "list", "skills")
-	if err == nil || !strings.Contains(err.Error(), "unknown category") {
-		t.Fatalf("list skills: %v", err)
-	}
-
-	_, _, err = captureStreams(t, stub, "config", "add", "skill")
+	_, _, err := captureStreams(t, stub, "config", "add", "skill")
 	if err == nil || !strings.Contains(err.Error(), "not a config-merge module") {
 		t.Fatalf("config add skill: %v", err)
 	}
+}
+
+func TestListAndUpdateAcceptSkillsCategory(t *testing.T) {
+	_, stub := setupStartTestConfigWithRegistry(t, skillTestIndex())
+
+	_, _, err := captureStreams(t, stub, "list", "skills")
+	if err != nil && strings.Contains(err.Error(), "unknown category") {
+		t.Fatalf("list skills should be accepted: %v", err)
+	}
 
 	_, _, err = captureStreams(t, stub, "update", "skills")
-	if err == nil || !strings.Contains(err.Error(), "unknown category") {
-		t.Fatalf("update skills: %v", err)
+	if err != nil && strings.Contains(err.Error(), "unknown category") {
+		t.Fatalf("update skills should be accepted: %v", err)
 	}
 }
 

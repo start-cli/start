@@ -57,3 +57,51 @@ func TestUpdateResultJSON(t *testing.T) {
 		}
 	}
 }
+
+func TestSelectUpdateTargetsSkillsCategoryOrder(t *testing.T) {
+	t.Parallel()
+	collected := []InstalledModule{
+		{Category: "skills", Name: "a/skill", Scope: "global"},
+		{Category: "skills", Name: "b/skill", Scope: "global"},
+		{Category: "skills", Name: "a/skill", Scope: "local"},
+		{Category: "skills", Name: "b/skill", Scope: "local"},
+	}
+	orig := append([]InstalledModule{}, collected...)
+
+	got, err := selectUpdateTargets(nil, "skills", nil, collected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []struct{ name, scope string }{
+		{"a/skill", "global"},
+		{"a/skill", "local"},
+		{"b/skill", "global"},
+		{"b/skill", "local"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("len=%d, want %d: %+v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i].Name != want[i].name || got[i].Scope != want[i].scope {
+			t.Errorf("got[%d]=%s [%s], want %s [%s]", i, got[i].Name, got[i].Scope, want[i].name, want[i].scope)
+		}
+	}
+
+	unfiltered, err := selectUpdateTargets(nil, "", nil, collected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unfiltered) != len(got) {
+		t.Fatalf("unfiltered len=%d, skills len=%d", len(unfiltered), len(got))
+	}
+	for i := range got {
+		if unfiltered[i].Name != got[i].Name || unfiltered[i].Scope != got[i].Scope {
+			t.Errorf("unfiltered[%d]=%s [%s], skills[%d]=%s [%s]", i, unfiltered[i].Name, unfiltered[i].Scope, i, got[i].Name, got[i].Scope)
+		}
+	}
+	for i := range orig {
+		if collected[i].Name != orig[i].Name || collected[i].Scope != orig[i].Scope {
+			t.Fatalf("input mutated: %+v", collected)
+		}
+	}
+}

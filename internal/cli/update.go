@@ -12,6 +12,7 @@ import (
 	internalcue "github.com/p3bot/start/internal/cue"
 	"github.com/p3bot/start/internal/modules"
 	"github.com/p3bot/start/internal/registry"
+	"github.com/p3bot/start/internal/skills"
 	"github.com/p3bot/start/internal/tui"
 	"github.com/spf13/cobra"
 	"golang.org/x/mod/semver"
@@ -41,8 +42,11 @@ func addUpdateCommand(parent *cobra.Command) {
 		Short:   "Update installed modules",
 		Long: `Update installed modules to their latest versions.
 
-Without arguments, updates all installed modules.
+Without arguments, updates all installed modules including skills.
 With a query, updates only matching modules.
+
+The whole query skill or skills selects every installed skill.
+A skills:<name> address selects that inventory key (not every skill).
 
 Use --dry-run to preview what would be updated without applying changes.
 Use --force to re-fetch and update modules even when already at the latest version.`,
@@ -64,9 +68,6 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	query := ""
 	if len(args) > 0 {
 		query = args[0]
-		if isSkillsCategoryQuery(query) {
-			return usageError(fmt.Errorf("unknown category %q: expected agents, roles, contexts, or tasks", query))
-		}
 	}
 
 	jsonFlag, _ := cmd.Flags().GetBool("json")
@@ -102,39 +103,27 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	installed := collectInstalledModules(cfg.Value, paths, localCfg)
+	skillMods, err := collectSkillModules(paths)
+	if err != nil {
+		return err
+	}
+
+	installed, err = selectUpdateTargets(cmd, query, installed, skillMods)
+	if err != nil {
+		return err
+	}
 
 	if len(installed) == 0 {
 		if jsonFlag {
 			fmt.Fprintln(cmd.OutOrStdout(), "[]")
 			return nil
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), "No modules installed from registry.")
-		return nil
-	}
-
-	if query != "" {
-		// The name half uses the shared literal name matcher (substring,
-		// case-insensitive); the category half keeps its own substring match so a
-		// full or partial category query still selects every installed module in
-		// that category.
-		var filtered []InstalledModule
-		queryLower := strings.ToLower(query)
-		for _, a := range installed {
-			if modules.NameMatches(query, a.Name, modules.ModeSubstring) ||
-				strings.Contains(strings.ToLower(a.Category), queryLower) {
-				filtered = append(filtered, a)
-			}
-		}
-		installed = filtered
-
-		if len(installed) == 0 {
-			if jsonFlag {
-				fmt.Fprintln(cmd.OutOrStdout(), "[]")
-				return nil
-			}
+		if query != "" {
 			fmt.Fprintf(cmd.OutOrStdout(), "No installed modules matching %q\n", query)
 			return nil
 		}
+		fmt.Fprintln(cmd.OutOrStdout(), "No modules installed from registry.")
+		return nil
 	}
 
 	flags := getFlags(cmd)
@@ -149,11 +138,17 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 	dryRun := getFlags(cmd).DryRun
 	force, _ := cmd.Flags().GetBool("force")
+	skillEnv := &skillUpdateEnv{cmd: cmd}
 	total := len(installed)
 	var results []UpdateResult
 	for i, mod := range installed {
 		prog.Update("Updating %d/%d %s...", i+1, total, formatAddress(mod.Category, mod.Name))
-		result := checkAndUpdate(ctx, client, paths, index, mod, dryRun, force)
+		var result UpdateResult
+		if mod.Category == "skills" {
+			result = checkAndUpdateSkill(ctx, client, skillEnv, index, mod, dryRun, force)
+		} else {
+			result = checkAndUpdate(ctx, client, paths, index, mod, dryRun, force)
+		}
 		results = append(results, result)
 	}
 	prog.Done()
@@ -248,6 +243,161 @@ func checkAndUpdate(ctx context.Context, client registry.Client, paths config.Pa
 		return result
 	}
 
+	result.Updated = true
+	return result
+}
+
+func selectUpdateTargets(cmd *cobra.Command, query string, installed, skillMods []InstalledModule) ([]InstalledModule, error) {
+	if query == "" {
+		out := append(append([]InstalledModule{}, installed...), skillMods...)
+		sortInstalledModules(out)
+		return out, nil
+	}
+	if isSkillsCategoryWord(query) {
+		out := append([]InstalledModule{}, skillMods...)
+		sortInstalledModules(out)
+		return out, nil
+	}
+	if remainder, ok := skillsAddressRemainder(query); ok {
+		return selectSkillsByAddress(cmd, remainder, skillMods)
+	}
+
+	queryLower := strings.ToLower(query)
+	var filtered []InstalledModule
+	for _, a := range installed {
+		if modules.NameMatches(query, a.Name, modules.ModeSubstring) ||
+			strings.Contains(strings.ToLower(a.Category), queryLower) {
+			filtered = append(filtered, a)
+		}
+	}
+	for _, a := range skillMods {
+		if modules.NameMatches(query, a.Name, modules.ModeSubstring) {
+			filtered = append(filtered, a)
+		}
+	}
+	sortInstalledModules(filtered)
+	return filtered, nil
+}
+
+func selectSkillsByAddress(cmd *cobra.Command, remainder string, skillMods []InstalledModule) ([]InstalledModule, error) {
+	entries := make(map[string]skills.Entry, len(skillMods))
+	for _, m := range skillMods {
+		entries[m.Name] = skills.Entry{}
+	}
+	keys := skills.ResolveKey(entries, remainder)
+	switch len(keys) {
+	case 0:
+		return nil, notFoundError(fmt.Errorf("skill %q not found", remainder))
+	case 1:
+		return skillModsNamed(skillMods, keys[0]), nil
+	}
+
+	matches := make([]ModuleMatch, len(keys))
+	for i, k := range keys {
+		matches[i] = ModuleMatch{Name: k, Category: "skills", Source: ModuleSourceInstalled}
+	}
+	sel := &selector{
+		stdin:  cmd.InOrStdin(),
+		stdout: cmd.OutOrStdout(),
+		stderr: cmd.ErrOrStderr(),
+		flags:  getFlags(cmd),
+	}
+	scope := resolveScope{
+		categories:    []describeCategory{*describeCategoryFor("skills")},
+		crossCategory: true,
+		displayType:   "skill",
+	}
+	picked, err := sel.selectMatch(matches, scope, remainder)
+	if err != nil {
+		return nil, err
+	}
+	return skillModsNamed(skillMods, picked.Name), nil
+}
+
+func skillModsNamed(skillMods []InstalledModule, name string) []InstalledModule {
+	var out []InstalledModule
+	for _, m := range skillMods {
+		if strings.EqualFold(m.Name, name) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+type skillUpdateEnv struct {
+	cmd    *cobra.Command
+	once   bool
+	global []skills.Dest
+	local  []skills.Dest
+	err    error
+}
+
+func (e *skillUpdateEnv) roots(local bool) ([]skills.Dest, error) {
+	if !e.once {
+		e.once = true
+		e.global, e.local, e.err = scanSkillUninstallRoots(e.cmd)
+	}
+	if e.err != nil {
+		return nil, e.err
+	}
+	if local {
+		return e.local, nil
+	}
+	return e.global, nil
+}
+
+func checkAndUpdateSkill(ctx context.Context, client registry.Client, env *skillUpdateEnv, index *registry.Index, mod InstalledModule, dryRun, force bool) UpdateResult {
+	result := UpdateResult{Module: mod}
+	entry := findInIndex(index, mod.Category, mod.Name)
+	if entry == nil {
+		return result
+	}
+
+	result.OldVersion = mod.InstalledVer
+	result.NewVersion = entry.Version
+	needsUpdate := force || (entry.Version != "" && (mod.InstalledVer == "" || semver.Compare(entry.Version, mod.InstalledVer) > 0))
+	if !needsUpdate {
+		return result
+	}
+
+	roots, err := env.roots(mod.Scope == "local")
+	if err != nil {
+		result.Error = err
+		return result
+	}
+	present, err := skills.PresentDests(roots, mod.Name)
+	if err != nil {
+		result.Error = err
+		return result
+	}
+	if len(present) == 0 {
+		result.Error = fmt.Errorf("skill %q has no SKILL.md under uninstall dests; run '%s' to rematerialise", mod.Name, skills.InstallCommand(mod.Name, mod.Scope == "local"))
+		return result
+	}
+	if dryRun {
+		result.Updated = true
+		return result
+	}
+
+	sourceDir, origin, version, err := fetchSkillModule(ctx, client, modules.SearchResult{
+		Category: mod.Category,
+		Name:     mod.Name,
+		Entry:    *entry,
+	})
+	if err != nil {
+		result.Error = err
+		return result
+	}
+	for _, dest := range present {
+		if err := skills.Materialise(sourceDir, dest); err != nil {
+			result.Error = fmt.Errorf("rematerialising %s: %w", dest, err)
+			return result
+		}
+	}
+	if err := skills.Upsert(filepath.Dir(mod.ConfigFile), mod.Name, origin, version); err != nil {
+		result.Error = fmt.Errorf("updating skill inventory: %w", err)
+		return result
+	}
 	result.Updated = true
 	return result
 }

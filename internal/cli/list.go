@@ -12,6 +12,7 @@ import (
 	internalcue "github.com/p3bot/start/internal/cue"
 	"github.com/p3bot/start/internal/modules"
 	"github.com/p3bot/start/internal/registry"
+	"github.com/p3bot/start/internal/skills"
 	"github.com/p3bot/start/internal/tui"
 	"github.com/spf13/cobra"
 	"golang.org/x/mod/semver"
@@ -22,6 +23,8 @@ import (
 // a shared helper would hide those messages or need callbacks. Update checking
 // uses checkForUpdates rather than fetchIndex because the index is only
 // fetched on the --verbose path.
+
+const skillStatusMissing = "missing"
 
 // InstalledModule represents an installed module with version info.
 type InstalledModule struct {
@@ -36,6 +39,7 @@ type InstalledModule struct {
 	Scope        string   `json:"scope"`
 	Origin       string   `json:"origin"`
 	ConfigFile   string   `json:"configFile"`
+	Status       string   `json:"status,omitempty"`
 }
 
 func addListCommand(parent *cobra.Command) {
@@ -49,7 +53,7 @@ func addListCommand(parent *cobra.Command) {
 Shows all modules installed via the registry with their current version
 and whether updates are available.
 
-Optionally filter by category: agents, roles, contexts, or tasks.
+Optionally filter by category: agents, roles, contexts, tasks, or skills.
 
 Use --json to output machine-readable JSON.`,
 		Args: cobra.MaximumNArgs(1),
@@ -70,8 +74,8 @@ func runList(cmd *cobra.Command, args []string) error {
 	var category string
 	if len(args) > 0 {
 		singular := normalizeCategoryArg(args[0])
-		if singular == "" || singular == "skill" {
-			return usageError(fmt.Errorf("unknown category %q: expected agents, roles, contexts, or tasks", args[0]))
+		if singular == "" {
+			return usageError(fmt.Errorf("unknown category %q: expected agents, roles, contexts, tasks, or skills", args[0]))
 		}
 		category = singular + "s"
 	}
@@ -109,6 +113,17 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 
 	installed := collectInstalledModules(cfg.Value, paths, localCfg)
+	if category == "" || category == "skills" {
+		skillMods, err := collectSkillModules(paths)
+		if err != nil {
+			return err
+		}
+		if len(skillMods) > 0 {
+			annotateSkillPresence(cmd, skillMods)
+			installed = append(installed, skillMods...)
+			sortInstalledModules(installed)
+		}
+	}
 
 	if len(installed) == 0 {
 		if jsonFlag {
@@ -241,14 +256,118 @@ func collectInstalledModules(v cue.Value, paths config.Paths, localCfg cue.Value
 		}
 	}
 
+	sortInstalledModules(installed)
+	return installed
+}
+
+func sortInstalledModules(installed []InstalledModule) {
 	sort.Slice(installed, func(i, j int) bool {
 		if installed[i].Category != installed[j].Category {
 			return modules.CategoryOrder(installed[i].Category) < modules.CategoryOrder(installed[j].Category)
 		}
-		return installed[i].Name < installed[j].Name
+		if installed[i].Name != installed[j].Name {
+			return installed[i].Name < installed[j].Name
+		}
+		return installed[i].Scope < installed[j].Scope
 	})
+}
 
-	return installed
+// needsSkillDestScan reports whether doctor should look up uninstall dests.
+// A load error still needs the lookup: CheckSkills loads each scope on its
+// own, so a broken file in one scope must not skip dest health in the other.
+func needsSkillDestScan(paths config.Paths) bool {
+	mods, err := collectSkillModules(paths)
+	return err != nil || len(mods) > 0
+}
+
+// collectSkillModules loads each scope's skills.cue independently. Dest health
+// is not computed here; list annotates presence after a dest scan.
+func collectSkillModules(paths config.Paths) ([]InstalledModule, error) {
+	var installed []InstalledModule
+	if paths.GlobalExists {
+		mods, err := skillModulesFromDir(paths.Global, "global")
+		if err != nil {
+			return nil, err
+		}
+		installed = append(installed, mods...)
+	}
+	if paths.LocalExists {
+		mods, err := skillModulesFromDir(paths.Local, "local")
+		if err != nil {
+			return nil, err
+		}
+		installed = append(installed, mods...)
+	}
+	return installed, nil
+}
+
+func skillModulesFromDir(dir, scope string) ([]InstalledModule, error) {
+	entries, err := skills.Load(dir)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]string, 0, len(entries))
+	for k := range entries {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]InstalledModule, 0, len(keys))
+	for _, k := range keys {
+		e := entries[k]
+		out = append(out, InstalledModule{
+			Category:     "skills",
+			Name:         k,
+			InstalledVer: e.Version,
+			Scope:        scope,
+			Origin:       e.Origin,
+			ConfigFile:   skills.InventoryPath(dir),
+		})
+	}
+	return out, nil
+}
+
+func annotateSkillPresence(cmd *cobra.Command, mods []InstalledModule) {
+	stderr := cmd.ErrOrStderr()
+	globalRoots, localRoots, err := scanSkillUninstallRoots(cmd)
+	if err != nil {
+		printWarning(stderr, "agent catalog unavailable; dest scan skipped")
+		return
+	}
+	var destErr error
+	for i := range mods {
+		roots := globalRoots
+		if mods[i].Scope == "local" {
+			roots = localRoots
+		}
+		present, err := skills.PresentDests(roots, mods[i].Name)
+		if err != nil {
+			destErr = err
+			continue
+		}
+		if len(present) == 0 {
+			mods[i].Status = skillStatusMissing
+		}
+	}
+	if destErr != nil {
+		printWarning(stderr, "could not check some skill dests: %v", destErr)
+	}
+}
+
+func scanSkillUninstallRoots(cmd *cobra.Command) (global, local []skills.Dest, err error) {
+	cat, err := openSkillCatalog(cmd)
+	if err != nil {
+		return nil, nil, err
+	}
+	ctx := context.Background()
+	global, err = cat.UninstallRoots(ctx, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	local, err = cat.UninstallRoots(ctx, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	return global, local, nil
 }
 
 // determineScopeAndFile reports whether a module is global or local and the
@@ -303,6 +422,8 @@ func findInIndex(index *registry.Index, category, name string) *registry.IndexEn
 		entries = index.Contexts
 	case "tasks":
 		entries = index.Tasks
+	case "skills":
+		entries = index.Skills
 	}
 
 	if entry, ok := entries[name]; ok {
@@ -320,7 +441,7 @@ func printInstalledModules(w io.Writer, installed []InstalledModule, verbose boo
 		grouped[a.Category] = append(grouped[a.Category], a)
 	}
 
-	categories := []string{"agents", "roles", "contexts", "tasks"}
+	categories := []string{"agents", "roles", "contexts", "tasks", "skills"}
 	for _, cat := range categories {
 		modules := grouped[cat]
 		if len(modules) == 0 {
@@ -337,19 +458,35 @@ func printInstalledModules(w io.Writer, installed []InstalledModule, verbose boo
 				} else {
 					fmt.Fprint(w, tui.Annotate("latest"))
 				}
+				if a.Category == "skills" {
+					fmt.Fprintf(w, " [%s]", a.Scope)
+				}
+				printSkillMissingAnnotation(w, a)
 				fmt.Fprintln(w)
 			} else {
 				scopeIndicator := ""
-				if verbose {
+				if verbose || a.Category == "skills" {
 					scopeIndicator = fmt.Sprintf(" [%s]", a.Scope)
 				}
 				if a.InstalledVer != "" {
-					fmt.Fprintf(w, "  %-25s %s%s\n", a.Name, tui.Annotate("%s", a.InstalledVer), scopeIndicator)
+					fmt.Fprintf(w, "  %-25s %s%s", a.Name, tui.Annotate("%s", a.InstalledVer), scopeIndicator)
 				} else {
-					fmt.Fprintf(w, "  %s%s\n", a.Name, scopeIndicator)
+					fmt.Fprintf(w, "  %s%s", a.Name, scopeIndicator)
 				}
+				printSkillMissingAnnotation(w, a)
+				fmt.Fprintln(w)
 			}
 		}
 		fmt.Fprintln(w)
 	}
+}
+
+func printSkillMissingAnnotation(w io.Writer, a InstalledModule) {
+	if a.Status != skillStatusMissing {
+		return
+	}
+	fmt.Fprint(w, " ")
+	tui.ColorCyan.Fprint(w, "(")
+	tui.ColorWarning.Fprint(w, "missing")
+	tui.ColorCyan.Fprint(w, ")")
 }

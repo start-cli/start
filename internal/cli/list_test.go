@@ -34,6 +34,16 @@ func TestListCategoryValidation(t *testing.T) {
 			args:    []string{"list", "task"},
 			wantErr: "",
 		},
+		{
+			name:    "valid category skills",
+			args:    []string{"list", "skills"},
+			wantErr: "",
+		},
+		{
+			name:    "valid category skill singular",
+			args:    []string{"list", "skill"},
+			wantErr: "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -141,5 +151,26 @@ func TestInstalledModuleJSONOmitsEmptyOptionalFields(t *testing.T) {
 	}
 	if strings.Contains(output, `"description"`) {
 		t.Errorf("omitempty should suppress empty description, got: %s", output)
+	}
+	if strings.Contains(output, `"status"`) {
+		t.Errorf("omitempty should suppress empty status, got: %s", output)
+	}
+}
+
+func TestInstalledModuleJSONStatusMissing(t *testing.T) {
+	t.Parallel()
+	module := InstalledModule{
+		Category: "skills",
+		Name:     "workflows/one-by-one",
+		Scope:    "global",
+		Origin:   "github.com/p3bot/library/skills/workflows/one-by-one@v1.0.0",
+		Status:   skillStatusMissing,
+	}
+	data, err := json.Marshal(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"status":"missing"`) {
+		t.Errorf("missing status not emitted: %s", data)
 	}
 }

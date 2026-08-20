@@ -702,12 +702,24 @@ func normalizeCategoryArg(arg string) string {
 	return ""
 }
 
-// isSkillsCategoryQuery reports whether query names the skills category
-// (skill/skills, or a skills: prefix). list and update must reject these
-// rather than accept-then-succeed-empty.
-func isSkillsCategoryQuery(query string) bool {
-	before, _, _ := strings.Cut(query, ":")
-	return normalizeCategoryArg(before) == "skill"
+// isSkillsCategoryWord reports whether query is the whole category word
+// skill/skills (no colon). A skills: prefix is an address, not this filter.
+func isSkillsCategoryWord(query string) bool {
+	if strings.Contains(query, ":") {
+		return false
+	}
+	return normalizeCategoryArg(query) == "skill"
+}
+
+// skillsAddressRemainder reports whether query is a skills: address and
+// returns the remainder after the prefix. skill: is accepted as the same
+// prefix via normalizeCategoryArg.
+func skillsAddressRemainder(query string) (string, bool) {
+	before, after, ok := strings.Cut(query, ":")
+	if !ok || normalizeCategoryArg(before) != "skill" {
+		return "", false
+	}
+	return after, true
 }
 
 type configMatch struct {
