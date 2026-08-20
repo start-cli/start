@@ -1,9 +1,9 @@
 # Module Resolution
 
 Reference for how `start` turns a user-supplied identifier into a module to act
-on. This procedure is uniform across tasks, roles, contexts, and agents. The
-guiding principle is simple: search the installed config and the registry index
-for matches, apply one match rule, and act on the result.
+on. This procedure is uniform across agents, roles, contexts, tasks, and skills.
+The guiding principle is simple: search the installed config and the registry
+index for matches, apply one match rule, and act on the result.
 
 ## Where it applies
 
@@ -13,9 +13,9 @@ for matches, apply one match rule, and act on the result.
 | `--role <id>` (`-r`) | flag value | roles |
 | `--context <id>` (`-c`) | flag value, repeatable | contexts |
 | `--agent <id>` (`-a`) | flag value | agents |
-| `start get <id>`, `start describe <id>` | positional argument | all four |
-| `start uninstall <id>` | positional argument, repeatable | all four |
-| `start config remove <id>` | positional argument, repeatable | all four |
+| `start get <id>`, `start describe <id>` | positional argument | all library categories |
+| `start uninstall <id>` | positional argument, repeatable | all library categories |
+| `start config remove <id>` | positional argument, repeatable | all library categories |
 
 The last two are installed-only surfaces; they reuse the engine's match rule
 over installed config alone and differ from the rest as set out under
@@ -42,14 +42,16 @@ A single exact match is unambiguous by definition: the identifier equals the ful
 of exactly one module, compared case-insensitively (any casing of a module's
 complete name resolves directly). It resolves to that module directly — even when
 the name is also a substring of longer names, and even without a TTY. An exact
-match that exists only in the registry is installed first, then used.
+match that exists only in the registry is installed first, then used, except on
+`get`/`describe` of a skill, which fetch and emit without writing dests or
+inventory.
 
 On cross-category surfaces (`get`, `describe`) the same name can in
 principle name one module in two categories — two exact matches. The exact tier
 here spans both sources across every scoped category, so a same-name exact in
 another category is detected whether it is installed or registry-only. A single
-exact match is the canonical result and resolves directly (a registry-only one
-installs first). When the name is an exact match in more than one category —
+exact match is the canonical result and resolves directly (a registry-only prompt
+module installs first; a registry-only skill is fetched, not installed). When the name is an exact match in more than one category —
 two installed, an installed one alongside a registry-only one in another category,
 or two registry-only ones when nothing is installed — it is a genuine ambiguity
 that falls to the menu below, resolved by category-qualifying the name. This
@@ -252,8 +254,9 @@ Notes:
 
 ## Category prefix
 
-A `category:name` identifier names one of the four categories — `agents`, `roles`,
-`contexts`, `tasks` — and navigates that category's namespace from its root. Names
+A `category:name` identifier names one of the library categories — `agents`,
+`roles`, `contexts`, `tasks`, `skills` — and navigates that category's namespace
+from its root. Names
 within a category are paths (`jira/item/review`), so the qualifier scopes the
 search to the named category and descends from `name`: the fallback matches names
 that begin with the supplied term (a prefix), where a bare term matches the term
@@ -276,7 +279,7 @@ Prefix rules by surface:
   the prefix is optional. When present it must equal the surface's own category;
   a mismatched prefix is an error (for example `roles:foo` passed to `start task`).
 - Cross-category surfaces (`get`, `describe`): no prefix searches
-  all four categories; a prefix narrows to the named category.
+  all library categories; a prefix narrows to the named category.
 
 Examples:
 

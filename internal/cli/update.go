@@ -64,6 +64,9 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	query := ""
 	if len(args) > 0 {
 		query = args[0]
+		if isSkillsCategoryQuery(query) {
+			return usageError(fmt.Errorf("unknown category %q: expected agents, roles, contexts, or tasks", query))
+		}
 	}
 
 	jsonFlag, _ := cmd.Flags().GetBool("json")

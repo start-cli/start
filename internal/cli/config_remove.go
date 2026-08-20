@@ -16,10 +16,12 @@ func addConfigRemoveCommand(parent *cobra.Command) {
 		Use:     "remove [query]",
 		Aliases: []string{"rm", "delete"},
 		Short:   "Remove a config item",
-		Long: `Remove an agent, role, context, or task from configuration.
+		Long: `Remove an installed module from configuration.
 
-Search by name across all categories. If multiple items match, a menu is presented.
-With no argument, prompts interactively for category and item.
+A named query resolves against installed modules across all library categories
+(agents, roles, contexts, tasks, skills). If multiple items match, a menu is
+presented. With no argument, prompts interactively for a config-merge category
+(agent, role, context, or task) and item.
 
 Use --force to skip the confirmation prompt.`,
 		Args: cobra.MaximumNArgs(1),
@@ -93,7 +95,7 @@ func runConfigRemoveInteractive(stdin io.Reader, stdout, stderr io.Writer, local
 		}
 	}
 
-	return errors.Join(removeResolvedItems(stdout, stderr, toRemove, local, quiet, defaultAgent)...)
+	return errors.Join(removeResolvedItems(nil, stdout, stderr, toRemove, local, quiet, defaultAgent)...)
 }
 
 // Returns false (without error) when the user declines.
@@ -123,14 +125,14 @@ func confirmConfigRemoval(w io.Writer, r io.Reader, items []configMatch, local b
 	return true, nil
 }
 
-// removeConfigItem is the per-category removal dispatch seam. All four config
-// categories share the AST config-entry removal today; the skills project will
-// register its bundle-deletion path here, so the seam must not assume
-// config-entry removal is universal.
-func removeConfigItem(m configMatch, local bool) error {
+// removeConfigItem is the per-category removal dispatch seam: config-merge
+// categories drop a CUE entry; skills drop dest directories and the inventory.
+func removeConfigItem(cmd *cobra.Command, m configMatch, local bool) error {
 	switch m.Category {
 	case "agent", "role", "context", "task":
 		return removeConfigEntry(m.Category, m.Name, local)
+	case "skill":
+		return uninstallSkill(io.Discard, cmd, m.Name, local, true)
 	}
 	return fmt.Errorf("unknown category %q", m.Category)
 }

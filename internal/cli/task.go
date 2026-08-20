@@ -99,7 +99,10 @@ func executeTask(stdout, stderr io.Writer, stdin io.Reader, flags *Flags, taskNa
 	surfaces := append(baseSurfaces(flags), pendingSurface{taskName, singleCategoryScope("tasks", "task", false)})
 	r.wantLive = r.computeWantLive(surfaces)
 
-	agentName := flags.Agent
+	agentName, err := launchAgentName(flags)
+	if err != nil {
+		return err
+	}
 	if agentName != "" {
 		agentName, err = r.resolveAgent(agentName)
 		if err != nil {

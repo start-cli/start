@@ -13,7 +13,7 @@ func addUninstallCommand(parent *cobra.Command) {
 		Long: `Remove one or more installed modules from your configuration, the inverse of install.
 
 Resolves each query against installed modules only — the registry is never
-consulted. A bare query matches by substring across all four categories; a
+consulted. A bare query matches by substring across all library categories; a
 "category:name" query matches by prefix within that category; a whole-name exact
 match resolves ahead of both. If multiple modules match, prompts for selection.
 

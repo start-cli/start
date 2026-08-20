@@ -135,7 +135,7 @@ Examples:
 
 	cmd.SetVersionTemplate(versionTemplate)
 
-	cmd.PersistentFlags().StringVarP(&flags.Agent, "agent", "a", "", "Override agent selection")
+	cmd.PersistentFlags().StringSliceVarP(&flags.Agent, "agent", "a", nil, "Override agent (launch: one library agent; skill install/describe: agentdex catalog ids)")
 	cmd.PersistentFlags().StringVarP(&flags.Role, "role", "r", "", "Override role (config name, file path, or http(s) URL); 'none' skips role assignment (also: nil, off, 0)")
 	cmd.PersistentFlags().StringVarP(&flags.Model, "model", "m", "", "Override model selection")
 	cmd.PersistentFlags().StringSliceVarP(&flags.Context, "context", "c", nil, "Select contexts (tags, file paths, or http(s) URLs); 'none' drops auto-loaded contexts (also: nil, off, 0)")

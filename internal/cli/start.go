@@ -28,7 +28,7 @@ type flagsKey struct{}
 // Flags holds all CLI flag values. Each command instance gets its own Flags so
 // tests can run in parallel without shared state.
 type Flags struct {
-	Agent   string
+	Agent   []string
 	Role    string
 	Model   string
 	Context []string
@@ -381,7 +381,10 @@ func executeStart(stdout, stderr io.Writer, stdin io.Reader, flags *Flags, selec
 	// baseSurfaces covers the contexts this invocation will resolve.
 	r.wantLive = r.computeWantLive(baseSurfaces(flags))
 
-	agentName := flags.Agent
+	agentName, err := launchAgentName(flags)
+	if err != nil {
+		return err
+	}
 	if agentName != "" {
 		agentName, err = r.resolveAgent(agentName)
 		if err != nil {

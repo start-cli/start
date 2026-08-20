@@ -240,7 +240,7 @@ func TestResolveCross_UnknownPrefix(t *testing.T) {
 	if !strings.Contains(msg, "unknown category") || !strings.Contains(msg, `"foo"`) {
 		t.Errorf("error should name the unknown category, got: %v", err)
 	}
-	for _, want := range []string{"agents", "roles", "contexts", "tasks"} {
+	for _, want := range []string{"agents", "roles", "contexts", "tasks", "skills"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("error should list valid category %q, got: %v", want, err)
 		}
@@ -438,6 +438,7 @@ func TestParseAddress(t *testing.T) {
 		{"agents:claude", "agents", "claude", true, false},
 		{"agents:claude/interactive", "agents", "claude/interactive", true, false},
 		{"contexts:cwd/agents-md", "contexts", "cwd/agents-md", true, false},
+		{"skills:workflows/one-by-one", "skills", "workflows/one-by-one", true, false},
 		{"foo:bar", "", "", false, true},
 		{"agent:claude", "", "", false, true}, // singular typo, not in valid set
 	}

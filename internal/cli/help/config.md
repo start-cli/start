@@ -5,6 +5,7 @@
 - Local overrides global; --local flag targets ./.start/ only
 
 Files: agents.cue, roles.cue, contexts.cue, tasks.cue, settings.cue
+Inventory: skills.cue (origin/version for installed skills; not a config-merge module — use start install / start uninstall)
 
 Settings: `default_agent` `shell` `timeout` `library_index`
 

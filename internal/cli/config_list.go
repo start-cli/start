@@ -220,6 +220,9 @@ func runConfigListCmd(cmd *cobra.Command, args []string) error {
 			if category == "" {
 				return usageError(fmt.Errorf("unknown category %q: expected agent, role, context, or task", args[0]))
 			}
+			if category == "skill" {
+				return usageError(fmt.Errorf("skills is not a config-merge module"))
+			}
 		}
 		items, err := collectConfigListItems(scope, category)
 		if err != nil {
@@ -256,6 +259,9 @@ func runConfigListCmd(cmd *cobra.Command, args []string) error {
 	category := normalizeCategoryArg(args[0])
 	if category == "" {
 		return fmt.Errorf("unknown category %q: expected agent, role, context, or task", args[0])
+	}
+	if category == "skill" {
+		return usageError(fmt.Errorf("skills is not a config-merge module"))
 	}
 
 	switch category {

@@ -38,6 +38,11 @@ prompts for selection. Use a direct path (e.g., "golang/code-review") for exact 
 Prefix the query with a category (e.g., "roles:golang/code-review") to scope the
 search to that category; an unknown category is an error.
 
+A skills: prefix (or a bare skill name) materialises the skill into detected
+agent dests, or into dests named by --agent (agentdex catalog ids, repeatable).
+It records origin and version in skills.cue; it does not write a prompt-module
+config file.
+
 Multiple queries can be provided to install several modules at once.
 
 By default, installs to global config (~/.config/start/).
@@ -182,6 +187,13 @@ func installModule(ctx context.Context, cmd *cobra.Command, prog *tui.Progress, 
 
 	var errs []error
 	for _, selected := range selections {
+		if selected.Category == "skills" {
+			if err := installSkill(ctx, w, cmd, client, selected, configDir, scopeName, flags); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", formatAddress(selected.Category, selected.Name), err))
+				fmt.Fprintf(w, "Error installing %s: %v\n", formatAddress(selected.Category, selected.Name), err)
+			}
+			continue
+		}
 		if err := installSingleModule(ctx, w, prog, client, index, selected, configDir, scopeName, flags, cfg); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", formatAddress(selected.Category, selected.Name), err))
 			fmt.Fprintf(w, "Error installing %s: %v\n", formatAddress(selected.Category, selected.Name), err)

@@ -70,7 +70,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	var category string
 	if len(args) > 0 {
 		singular := normalizeCategoryArg(args[0])
-		if singular == "" {
+		if singular == "" || singular == "skill" {
 			return usageError(fmt.Errorf("unknown category %q: expected agents, roles, contexts, or tasks", args[0]))
 		}
 		category = singular + "s"

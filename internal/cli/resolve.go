@@ -108,7 +108,11 @@ type pendingSurface struct {
 // computeWantLive; executeTask appends its task surface. The late task-declared
 // role is excluded — its name is unknown here and ensureTaskRoleLive handles it.
 func baseSurfaces(flags *Flags) []pendingSurface {
-	surfaces := []pendingSurface{{flags.Agent, singleCategoryScope("agents", "agent", false)}}
+	agent := ""
+	if len(flags.Agent) == 1 {
+		agent = flags.Agent[0]
+	}
+	surfaces := []pendingSurface{{agent, singleCategoryScope("agents", "agent", false)}}
 	if flags.Role != "" && !flags.NoRole {
 		surfaces = append(surfaces, pendingSurface{flags.Role, singleCategoryScope("roles", "role", true)})
 	}

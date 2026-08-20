@@ -408,6 +408,50 @@ task: {
 	})
 }
 
+func TestValidateOneModule_SkillsSkipUses(t *testing.T) {
+	t.Parallel()
+	cacheDir := t.TempDir()
+	moduleDir := filepath.Join(cacheDir, "skills", "workflows", "one-by-one")
+	if err := os.MkdirAll(moduleDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(moduleDir, "skill.cue"), []byte("package onebyone\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	idx := &registry.Index{
+		Skills: map[string]registry.IndexEntry{
+			"workflows/one-by-one": {
+				Module:  "github.com/p3bot/library/skills/workflows/one-by-one@v1",
+				Version: stubVersion,
+			},
+		},
+	}
+	got := validateOneModule(context.Background(), newRegistryStub(idx, ""), idx, "skills", "workflows/one-by-one", idx.Skills["workflows/one-by-one"], nil, cacheDir)
+	for _, issue := range got.issues {
+		if strings.Contains(issue, "uses") {
+			t.Fatalf("skills must skip uses check, got %q", issue)
+		}
+	}
+}
+
+func TestValidateSkillLeafUniqueness(t *testing.T) {
+	t.Parallel()
+	entries := map[string]registry.IndexEntry{
+		"workflows/one-by-one": {},
+		"review/one-by-one":    {},
+		"review/pre-commit":    {},
+	}
+
+	issues := validateSkillLeafUniqueness("workflows/one-by-one", entries)
+	if len(issues) != 1 || !strings.Contains(issues[0], "review/one-by-one") {
+		t.Fatalf("collision = %v", issues)
+	}
+	if issues := validateSkillLeafUniqueness("review/pre-commit", entries); len(issues) != 0 {
+		t.Fatalf("unique leaf = %v", issues)
+	}
+}
+
 // TestValidateUsesReferences exercises the index-resolver: a resolvable entry
 // passes, while malformed and unresolvable entries each yield one issue.
 func TestValidateUsesReferences(t *testing.T) {

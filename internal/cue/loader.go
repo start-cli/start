@@ -113,6 +113,7 @@ var collectionKeys = map[string]bool{
 	KeyRoles:    true,
 	KeyContexts: true,
 	KeyTasks:    true,
+	KeySkills:   true,
 }
 
 // mergeWithReplacement merges CUE values with two-level replacement semantics:

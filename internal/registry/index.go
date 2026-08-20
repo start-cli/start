@@ -32,6 +32,7 @@ type Index struct {
 	Roles    map[string]IndexEntry `json:"roles,omitempty"`
 	Contexts map[string]IndexEntry `json:"contexts,omitempty"`
 	Tasks    map[string]IndexEntry `json:"tasks,omitempty"`
+	Skills   map[string]IndexEntry `json:"skills,omitempty"`
 }
 
 // EffectiveIndexPath returns configured if non-empty, otherwise IndexModulePath.
@@ -97,6 +98,7 @@ func decodeIndex(v cue.Value) (*Index, error) {
 		Roles:    make(map[string]IndexEntry),
 		Contexts: make(map[string]IndexEntry),
 		Tasks:    make(map[string]IndexEntry),
+		Skills:   make(map[string]IndexEntry),
 	}
 
 	if err := decodeCategory(v, "agents", idx.Agents); err != nil {
@@ -109,6 +111,9 @@ func decodeIndex(v cue.Value) (*Index, error) {
 		return nil, err
 	}
 	if err := decodeCategory(v, "tasks", idx.Tasks); err != nil {
+		return nil, err
+	}
+	if err := decodeCategory(v, "skills", idx.Skills); err != nil {
 		return nil, err
 	}
 

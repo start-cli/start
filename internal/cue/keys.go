@@ -6,6 +6,7 @@ const (
 	KeyRoles    = "roles"
 	KeyContexts = "contexts"
 	KeyTasks    = "tasks"
+	KeySkills   = "skills"
 	KeySettings = "settings"
 
 	// Agent sub-field keys for the `models` alias map.
@@ -19,5 +20,6 @@ var ConfigFiles = map[string]string{
 	KeyRoles:    "roles.cue",
 	KeyContexts: "contexts.cue",
 	KeyTasks:    "tasks.cue",
+	KeySkills:   "skills.cue",
 	KeySettings: "settings.cue",
 }

@@ -115,6 +115,8 @@ func indexEntries(index *registry.Index, category string) map[string]registry.In
 		return index.Contexts
 	case "tasks":
 		return index.Tasks
+	case "skills":
+		return index.Skills
 	default:
 		return nil
 	}

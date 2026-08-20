@@ -18,6 +18,7 @@ import (
 	"github.com/p3bot/start/internal/doctor"
 	"github.com/p3bot/start/internal/modules"
 	"github.com/p3bot/start/internal/registry"
+	"github.com/p3bot/start/internal/skills"
 	"github.com/p3bot/start/internal/tui"
 	"github.com/spf13/cobra"
 	"golang.org/x/mod/semver"
@@ -547,7 +548,7 @@ func indexVersionFromPath(resolvedPath string) string {
 }
 
 func indexEntryCount(idx *registry.Index) int {
-	return len(idx.Agents) + len(idx.Roles) + len(idx.Contexts) + len(idx.Tasks)
+	return len(idx.Agents) + len(idx.Roles) + len(idx.Contexts) + len(idx.Tasks) + len(idx.Skills)
 }
 
 // validateModules runs the five mismatch checks for every module in the index
@@ -561,6 +562,7 @@ func validateModules(ctx context.Context, client registry.Client, idx *registry.
 		{"roles", idx.Roles},
 		{"contexts", idx.Contexts},
 		{"tasks", idx.Tasks},
+		{"skills", idx.Skills},
 	}
 
 	var results []validateCatResult
@@ -599,14 +601,18 @@ func validateModules(ctx context.Context, client registry.Client, idx *registry.
 	return results
 }
 
-// validateOneModule runs checks 1–3, the staleness check, and the uses-reference
-// check for a single indexed module. Check 4 (filesystem orphan detection) is
-// performed by the caller, validateModules.
+// validateOneModule runs checks 1–3, the staleness check, the uses-reference
+// check (prompt modules only), and (for skills) dest-leaf uniqueness. Check 4
+// (filesystem orphan detection) is performed by the caller, validateModules.
 func validateOneModule(ctx context.Context, client registry.Client, idx *registry.Index, category, name string, entry registry.IndexEntry, tags []string, cacheDir string) validateModuleResult {
 	m := validateModuleResult{
 		name:    name,
 		version: entry.Version,
 		status:  validateModulePass,
+	}
+
+	if category == "skills" {
+		m.issues = append(m.issues, validateSkillLeafUniqueness(name, idx.Skills)...)
 	}
 
 	tagPrefix := validateGitTagPrefix(category, name)
@@ -676,17 +682,34 @@ func validateOneModule(ctx context.Context, client registry.Client, idx *registr
 		}
 	}
 
-	// uses references: every declared `uses` entry must resolve in the index.
-	if uses, err := loadModuleUses(cacheDir, category, name, client.Registry()); err != nil {
-		m.issues = append(m.issues, fmt.Sprintf("could not read `uses` declarations: %v", err))
-	} else {
-		m.issues = append(m.issues, validateUsesReferences(name, uses, idx)...)
+	// uses is a prompt-module contract. Skills have no skill:/name-keyed
+	// struct and no uses field; dest-leaf uniqueness is the skill-specific check.
+	if category != "skills" {
+		if uses, err := loadModuleUses(cacheDir, category, name, client.Registry()); err != nil {
+			m.issues = append(m.issues, fmt.Sprintf("could not read `uses` declarations: %v", err))
+		} else {
+			m.issues = append(m.issues, validateUsesReferences(name, uses, idx)...)
+		}
 	}
 
 	if len(m.issues) > 0 {
 		m.status = validateModuleFail
 	}
 	return m
+}
+
+// validateSkillLeafUniqueness reports dest-leaf collisions: install names
+// dests by leaf only, so two index skills that share a leaf cannot both land.
+func validateSkillLeafUniqueness(name string, entries map[string]registry.IndexEntry) []string {
+	names := make([]string, 0, len(entries))
+	for n := range entries {
+		names = append(names, n)
+	}
+	conflicts := skills.ConflictingKeys(names, name)
+	if len(conflicts) == 0 {
+		return nil
+	}
+	return []string{fmt.Sprintf("dest leaf %q is also used by %s — dests are named by leaf only", skills.Leaf(name), strings.Join(conflicts, ", "))}
 }
 
 // loadModuleUses builds the module cloned at cacheDir/<category>/<name>, descends

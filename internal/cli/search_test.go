@@ -172,9 +172,10 @@ func TestPrintSearchSections(t *testing.T) {
 		}
 	})
 
-	t.Run("category order is agents roles contexts tasks", func(t *testing.T) {
+	t.Run("category order is agents roles contexts tasks skills", func(t *testing.T) {
 		t.Parallel()
 		allCatResults := []modules.SearchResult{
+			{Category: "skills", Name: "one-by-one", Entry: registry.IndexEntry{Description: "Walk findings"}},
 			{Category: "contexts", Name: "env", Entry: registry.IndexEntry{Description: "Environment"}},
 			{Category: "agents", Name: "claude", Entry: registry.IndexEntry{Description: "Claude AI"}},
 			{Category: "tasks", Name: "review", Entry: registry.IndexEntry{Description: "Code review"}},
@@ -191,10 +192,14 @@ func TestPrintSearchSections(t *testing.T) {
 		rolesIdx := strings.Index(out, "roles:")
 		tasksIdx := strings.Index(out, "tasks:")
 		contextsIdx := strings.Index(out, "contexts:")
+		skillsIdx := strings.Index(out, "skills:")
 
-		if agentsIdx > rolesIdx || rolesIdx > contextsIdx || contextsIdx > tasksIdx {
-			t.Errorf("categories in wrong order: agents=%d roles=%d contexts=%d tasks=%d",
-				agentsIdx, rolesIdx, contextsIdx, tasksIdx)
+		if agentsIdx < 0 || rolesIdx < 0 || contextsIdx < 0 || tasksIdx < 0 || skillsIdx < 0 {
+			t.Fatalf("missing category header in %q", out)
+		}
+		if agentsIdx > rolesIdx || rolesIdx > contextsIdx || contextsIdx > tasksIdx || tasksIdx > skillsIdx {
+			t.Errorf("categories in wrong order: agents=%d roles=%d contexts=%d tasks=%d skills=%d",
+				agentsIdx, rolesIdx, contextsIdx, tasksIdx, skillsIdx)
 		}
 	})
 

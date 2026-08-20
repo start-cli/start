@@ -23,10 +23,10 @@ func addLibraryCommand(parent *cobra.Command) {
 		Short:   "Show the available module library",
 		Long: `Display the full module library from the CUE Central Registry.
 
-Shows all available modules grouped by type (agents, roles, contexts, tasks).
+Shows all available modules grouped by type (agents, roles, contexts, tasks, skills).
 Installed modules are marked with ★.
 
-Optionally filter by category: agents, roles, contexts, or tasks.
+Optionally filter by category: agents, roles, contexts, tasks, or skills.
 Category filtering is supported with --json but not with --export.
 
 Use --json to output machine-readable JSON, or --export to display the
@@ -51,7 +51,7 @@ func runLibrary(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		singular := normalizeCategoryArg(args[0])
 		if singular == "" {
-			return usageError(fmt.Errorf("unknown category %q: expected agents, roles, contexts, or tasks", args[0]))
+			return usageError(fmt.Errorf("unknown category %q: expected agents, roles, contexts, tasks, or skills", args[0]))
 		}
 		category = singular + "s"
 	}
@@ -144,6 +144,8 @@ func filterIndexByCategory(index *registry.Index, category string) *registry.Ind
 		return &registry.Index{Contexts: index.Contexts}
 	case "tasks":
 		return &registry.Index{Tasks: index.Tasks}
+	case "skills":
+		return &registry.Index{Skills: index.Skills}
 	default:
 		return index
 	}
@@ -152,7 +154,7 @@ func filterIndexByCategory(index *registry.Index, category string) *registry.Ind
 // printIndex prints the index grouped by category (filtered to category when
 // non-empty), but the header total always reflects the full index.
 func printIndex(w io.Writer, index *registry.Index, version string, verbose bool, installed map[string]bool, category string) {
-	total := len(index.Agents) + len(index.Roles) + len(index.Contexts) + len(index.Tasks)
+	total := len(index.Agents) + len(index.Roles) + len(index.Contexts) + len(index.Tasks) + len(index.Skills)
 	fmt.Fprintf(w, "\nIndex: %s (%d modules)\n\n", version, total)
 
 	categories := []struct {
@@ -163,6 +165,7 @@ func printIndex(w io.Writer, index *registry.Index, version string, verbose bool
 		{"roles", index.Roles},
 		{"contexts", index.Contexts},
 		{"tasks", index.Tasks},
+		{"skills", index.Skills},
 	}
 
 	for _, cat := range categories {

@@ -21,8 +21,8 @@ import (
 
 // DescribeResult holds the result of preparing describe output.
 type DescribeResult struct {
-	ItemType string    // "Agent", "Role", "Context", "Task"
-	Category string    // "agents", "roles", "contexts", "tasks"
+	ItemType string    // "Agent", "Role", "Context", "Task", "Skill"
+	Category string    // "agents", "roles", "contexts", "tasks", "skills"
 	CueKey   string    // Top-level CUE key (e.g., "agents")
 	Name     string    // Item name
 	Value    cue.Value // The CUE value for this item
@@ -37,6 +37,17 @@ type describeCategory struct {
 }
 
 var describeCategories = []describeCategory{
+	{internalcue.KeyAgents, "agents", "Agent"},
+	{internalcue.KeyRoles, "roles", "Role"},
+	{internalcue.KeyContexts, "contexts", "Context"},
+	{internalcue.KeyTasks, "tasks", "Task"},
+	{internalcue.KeySkills, "skills", "Skill"},
+}
+
+// configMergeCategories is the four prompt-module categories written into
+// category *.cue files. Skills are a library category but not a config-merge
+// module; matchConfigByName and config add/edit/get stay on this list.
+var configMergeCategories = []describeCategory{
 	{internalcue.KeyAgents, "agents", "Agent"},
 	{internalcue.KeyRoles, "roles", "Role"},
 	{internalcue.KeyContexts, "contexts", "Context"},
@@ -65,7 +76,7 @@ type parsedAddress struct {
 }
 
 // parseAddress splits an address on the first colon. A left segment must be one
-// of the four known categories or an error listing the valid set is returned;
+// of the known library categories or an error listing the valid set is returned;
 // with no colon the whole input is the bare name.
 func parseAddress(input string) (parsedAddress, error) {
 	before, after, ok := strings.Cut(input, ":")
@@ -107,7 +118,8 @@ With an argument, searches across all categories and displays a verbose dump.
 
 Names may be bare (e.g. "claude") or fully qualified as "category:name"
 (e.g. "agents:claude/interactive"). The category prefix scopes the search
-to a single category; bare names continue to search across all four. A file path
+to a single category; bare names continue to search across all library
+categories. A file path
 (starting with ./, /, ~, or ~/) or an http(s) URL bypasses the search and its
 content is read directly.
 
@@ -172,6 +184,10 @@ func runDescribeListing(cmd *cobra.Command) error {
 	}
 
 	for _, cat := range describeCategories {
+		if cat.category == "skills" {
+			// Inventory is origin/version only, not prompt-module content.
+			continue
+		}
 		items := cfg.Value.LookupPath(cue.ParsePath(cat.key))
 		if !items.Exists() {
 			continue
@@ -246,13 +262,14 @@ func runDescribeSearch(cmd *cobra.Command, name string) error {
 	scope := scopeFromFlags(flags)
 	stdin := cmd.InOrStdin()
 
-	cfg, err := loadConfig(scope)
+	cfg, err := loadConfigOrEmpty(scope)
 	if err != nil {
 		return err
 	}
 
 	r := newResolver(cfg, flags, w, stderr, stdin)
-	outcome, err := r.resolveCross(name)
+	attachResolverSource(r, cmd)
+	outcome, err := r.resolveCrossNoInstall(name)
 	if err != nil {
 		return err
 	}
@@ -263,6 +280,14 @@ func runDescribeSearch(cmd *cobra.Command, name string) error {
 		return outputFileBody(w, flags, outcome.locator)
 	}
 	match := outcome.match
+
+	if match.Category == "skills" {
+		return describeSkill(w, cmd, flags, r.client, enrichSkillMatch(r, match))
+	}
+
+	if _, err := r.finalize(match); err != nil {
+		return err
+	}
 
 	// autoInstall always writes to global config, so after an install merged
 	// is the smallest scope guaranteed to see the new module. Widening is a
@@ -412,6 +437,25 @@ func loadConfig(scope config.Scope) (internalcue.LoadResult, error) {
 		default:
 			return result, fmt.Errorf("no configuration found (checked %s and %s; directories exist but contain no .cue files)", paths.Global, paths.Local)
 		}
+	}
+	return result, err
+}
+
+// loadConfigOrEmpty is loadConfig for fetch-and-emit surfaces (get, describe
+// of a name): a missing directory or a directory with no CUE files is an empty
+// value, so a registry-only skill can resolve. Invalid CUE still fails.
+func loadConfigOrEmpty(scope config.Scope) (internalcue.LoadResult, error) {
+	paths, err := config.ResolvePaths("")
+	if err != nil {
+		return internalcue.LoadResult{}, fmt.Errorf("resolving config paths: %w", err)
+	}
+	dirs := paths.ForScope(scope)
+	if len(dirs) == 0 {
+		return internalcue.LoadResult{}, nil
+	}
+	result, err := internalcue.NewLoader().Load(dirs)
+	if err != nil && errors.Is(err, internalcue.ErrNoCUEFiles) {
+		return internalcue.LoadResult{}, nil
 	}
 	return result, err
 }

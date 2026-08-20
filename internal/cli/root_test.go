@@ -136,7 +136,7 @@ func TestHelpArgLeafCommands(t *testing.T) {
 		{
 			name: "config remove help",
 			args: []string{"config", "remove", "help"},
-			want: "Remove an agent",
+			want: "Remove an installed module",
 		},
 		{
 			name: "config list help",

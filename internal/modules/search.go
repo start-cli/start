@@ -11,10 +11,10 @@ import (
 	"github.com/p3bot/start/internal/registry"
 )
 
-// searchCategories lists the four module categories in display order. It is the
-// modules-package source of truth for category-prefix validation, mirroring the
-// CLI's describeCategories ordering so error messages match across surfaces.
-var searchCategories = []string{"agents", "roles", "contexts", "tasks"}
+// searchCategories lists the library module categories in display order. It is
+// the modules-package source of truth for category-prefix validation, mirroring
+// the CLI's describeCategories ordering so error messages match across surfaces.
+var searchCategories = []string{"agents", "roles", "contexts", "tasks", "skills"}
 
 // SplitCategoryQuery peels an optional "category:" prefix off a search query so
 // install and search honour the same category:name addressing the resolution
@@ -183,7 +183,9 @@ func CategoryOrder(category string) int {
 		return 2
 	case "tasks":
 		return 3
-	default:
+	case "skills":
 		return 4
+	default:
+		return 5
 	}
 }

@@ -36,11 +36,12 @@ func newTestResolver(cfg internalcue.LoadResult) *resolver {
 // cache-gated decision, so an injected index resolves without a live pull
 // regardless of wantLive.
 type injectedIndexSource struct {
-	index *registry.Index
+	index  *registry.Index
+	client registry.Client
 }
 
 func (s injectedIndexSource) fetch(context.Context, bool) (*registry.Index, registry.Client, error) {
-	return s.index, nil, nil
+	return s.index, s.client, nil
 }
 
 // newResolverWithIndex injects a pre-fetched index so resolution runs offline

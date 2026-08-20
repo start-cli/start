@@ -514,7 +514,8 @@ func TestCategoryOrder(t *testing.T) {
 		{"roles", 1},
 		{"contexts", 2},
 		{"tasks", 3},
-		{"unknown", 4},
+		{"skills", 4},
+		{"unknown", 5},
 	}
 
 	for _, tt := range tests {

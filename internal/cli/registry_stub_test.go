@@ -179,6 +179,11 @@ func stubBasePath(modulePath string) string {
 // the stub wired to both the in-memory index and that fixture directory.
 func setupStartTestConfigWithRegistry(t *testing.T, idx *registry.Index) (tmpDir string, stub *registryStub) {
 	t.Helper()
+	if idx.Skills == nil {
+		// LoadIndex initialises every category; keep the in-memory index
+		// lockstep with the on-disk fixture for tests that omit Skills.
+		idx.Skills = map[string]registry.IndexEntry{}
+	}
 	tmpDir = setupStartTestConfig(t)
 	// chdir so the written .start dir resolves as local config.
 	chdir(t, tmpDir)
@@ -214,6 +219,7 @@ func renderIndexCUE(idx *registry.Index) string {
 	renderIndexCategory(&b, "roles", idx.Roles)
 	renderIndexCategory(&b, "contexts", idx.Contexts)
 	renderIndexCategory(&b, "tasks", idx.Tasks)
+	renderIndexCategory(&b, "skills", idx.Skills)
 	return b.String()
 }
 

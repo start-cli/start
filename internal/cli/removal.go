@@ -10,7 +10,9 @@ import (
 	"cuelang.org/go/cue"
 	"github.com/p3bot/start/internal/config"
 	internalcue "github.com/p3bot/start/internal/cue"
+	"github.com/p3bot/start/internal/fault"
 	"github.com/p3bot/start/internal/modules"
+	"github.com/p3bot/start/internal/skills"
 	"github.com/spf13/cobra"
 )
 
@@ -59,9 +61,9 @@ func removalScope(local bool) config.Scope {
 	return config.ScopeGlobal
 }
 
-// removalResolveScope is the resolveScope removal queries run under: all four
-// categories, cross-category labelling (category:name in menus), and no locator
-// acceptance — a file path or URL cannot name an installed module.
+// removalResolveScope is the resolveScope removal queries run under: all
+// library categories, cross-category labelling (category:name in menus), and no
+// locator acceptance — a file path or URL cannot name an installed module.
 func removalResolveScope() resolveScope {
 	return resolveScope{
 		categories:    describeCategories,
@@ -97,6 +99,57 @@ func loadRemovalConfig(local bool) (cue.Value, string, error) {
 		return cue.Value{}, "", err
 	}
 	return cfg, getDefaultAgentFromConfig(cfg), nil
+}
+
+// matchSkillUninstall resolves a skills-prefixed leaf (skills:one-by-one) when
+// the engine's prefix rule cannot see it. Called only after matchInstalled
+// returns not-found. Exact group/name and a unique bare leaf already resolve
+// through matchInstalled.
+func matchSkillUninstall(sel *selector, cfg cue.Value, input string, scope resolveScope) (ModuleMatch, error) {
+	addr, err := parseAddress(input)
+	if err != nil {
+		return ModuleMatch{}, err
+	}
+	if !addr.HasPrefix || addr.Category != "skills" {
+		return ModuleMatch{}, notFoundError(fmt.Errorf("module %q not found", input))
+	}
+	entries := inventoryFromValue(cfg)
+	keys := skills.ResolveKey(entries, addr.Name)
+	switch len(keys) {
+	case 0:
+		return ModuleMatch{}, notFoundError(fmt.Errorf("skill %q not found", addr.Name))
+	case 1:
+		return ModuleMatch{Name: keys[0], Category: "skills", Source: ModuleSourceInstalled}, nil
+	default:
+		matches := make([]ModuleMatch, len(keys))
+		for i, k := range keys {
+			matches[i] = ModuleMatch{Name: k, Category: "skills", Source: ModuleSourceInstalled}
+		}
+		return sel.selectMatch(matches, scope, addr.Name)
+	}
+}
+
+func inventoryFromValue(cfg cue.Value) map[string]skills.Entry {
+	out := map[string]skills.Entry{}
+	cat := cfg.LookupPath(cue.ParsePath(internalcue.KeySkills))
+	if !cat.Exists() {
+		return out
+	}
+	iter, err := cat.Fields()
+	if err != nil {
+		return out
+	}
+	for iter.Next() {
+		var e skills.Entry
+		if o := iter.Value().LookupPath(cue.ParsePath("origin")); o.Exists() {
+			e.Origin, _ = o.String()
+		}
+		if v := iter.Value().LookupPath(cue.ParsePath("version")); v.Exists() {
+			e.Version, _ = v.String()
+		}
+		out[iter.Selector().Unquoted()] = e
+	}
+	return out
 }
 
 // matchInstalled interprets a removal query and reduces it to a single installed
@@ -147,6 +200,14 @@ func runRemoval(cmd *cobra.Command, queries []string, local, force bool) error {
 	seen := make(map[string]bool)
 	for _, q := range queries {
 		match, err := matchInstalled(sel, src, q, scope)
+		// skills:one-by-one is not a prefix of workflows/one-by-one, so the
+		// engine reports not-found; ResolveKey then matches the unique leaf.
+		// Any other engine error (ambiguous prefix, usage) must stand.
+		if errors.Is(err, fault.ErrNotFound) {
+			if addr, pErr := parseAddress(q); pErr == nil && addr.HasPrefix && addr.Category == "skills" {
+				match, err = matchSkillUninstall(sel, src.cfg, q, scope)
+			}
+		}
 		if err != nil {
 			errs = append(errs, err)
 			if len(queries) > 1 {
@@ -179,7 +240,7 @@ func runRemoval(cmd *cobra.Command, queries []string, local, force bool) error {
 		}
 	}
 
-	errs = append(errs, removeResolvedItems(stdout, stderr, items, local, flags.Quiet, defaultAgent)...)
+	errs = append(errs, removeResolvedItems(cmd, stdout, stderr, items, local, flags.Quiet, defaultAgent)...)
 	return errors.Join(errs...)
 }
 
@@ -190,10 +251,10 @@ func runRemoval(cmd *cobra.Command, queries []string, local, force bool) error {
 // Both start uninstall / start config remove (via runRemoval) and the no-arg
 // interactive config-remove path share this loop so they warn and report
 // identically.
-func removeResolvedItems(stdout, stderr io.Writer, items []configMatch, local, quiet bool, defaultAgent string) []error {
+func removeResolvedItems(cmd *cobra.Command, stdout, stderr io.Writer, items []configMatch, local, quiet bool, defaultAgent string) []error {
 	var errs []error
 	for _, m := range items {
-		if err := removeConfigItem(m, local); err != nil {
+		if err := removeConfigItem(cmd, m, local); err != nil {
 			errs = append(errs, fmt.Errorf("removing %s %q: %w", m.Category, m.Name, err))
 			fmt.Fprintf(stdout, "Error removing %s %q: %v\n", m.Category, m.Name, err)
 			continue

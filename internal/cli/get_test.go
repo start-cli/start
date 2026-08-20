@@ -193,6 +193,9 @@ tasks: {
 func restoreNoColor(t *testing.T) {
 	t.Helper()
 	prev := color.NoColor
+	// --color=always is still gated by NO_COLOR in resolveColorMode; clear it
+	// so styling tests can run in environments that export NO_COLOR=1.
+	t.Setenv("NO_COLOR", "")
 	t.Cleanup(func() { color.NoColor = prev })
 }
 

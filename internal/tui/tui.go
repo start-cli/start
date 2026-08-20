@@ -26,6 +26,7 @@ var (
 	ColorRoles     = color.New(color.FgGreen)
 	ColorContexts  = color.New(color.FgCyan)
 	ColorTasks     = color.New(color.FgHiYellow)
+	ColorSkills    = color.New(color.FgHiMagenta)
 	ColorSettings  = color.New(color.FgMagenta)
 	ColorPrompts   = color.New(color.Faint)
 	ColorPaths     = color.New(color.FgHiCyan)
@@ -46,6 +47,8 @@ func CategoryColor(category string) *color.Color {
 		return ColorContexts
 	case "tasks", "task":
 		return ColorTasks
+	case "skills", "skill":
+		return ColorSkills
 	case "settings", "setting":
 		return ColorSettings
 	default:

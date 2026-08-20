@@ -20,7 +20,7 @@ func addGetCommand(parent *cobra.Command, flags *Flags) {
 		Short:   "Output module content to stdout",
 		Long: `Output the resolved content of a module to stdout for piping or preview.
 
-Searches across all categories (agents, roles, contexts, tasks) and writes the
+Searches across all categories (agents, roles, contexts, tasks, skills) and writes the
 module's content to stdout. Names may be bare (e.g. "agents-md") or fully
 qualified as "category:name" (e.g. "contexts:cwd/agents-md"); the category
 prefix scopes the search to a single category. A file path (starting with ./, /,
@@ -85,7 +85,7 @@ func runGet(cmd *cobra.Command, args []string) error {
 
 	flags := getFlags(cmd)
 	scope := scopeFromFlags(flags)
-	cfg, err := loadConfig(scope)
+	cfg, err := loadConfigOrEmpty(scope)
 	if err != nil {
 		return err
 	}
@@ -93,7 +93,8 @@ func runGet(cmd *cobra.Command, args []string) error {
 	// stderr in the stdout slot so fetch progress, auto-install notices, and
 	// selection menus do not corrupt the piped content on stdout.
 	r := newResolver(cfg, flags, stderr, stderr, stdin)
-	outcome, err := r.resolveCross(query)
+	attachResolverSource(r, cmd)
+	outcome, err := r.resolveCrossNoInstall(query)
 	if err != nil {
 		return err
 	}
@@ -101,6 +102,14 @@ func runGet(cmd *cobra.Command, args []string) error {
 		return outputFileBody(stdout, flags, outcome.locator)
 	}
 	match := outcome.match
+
+	if match.Category == "skills" {
+		return getSkill(stdout, stderr, flags, r.client, enrichSkillMatch(r, match))
+	}
+
+	if _, err := r.finalize(match); err != nil {
+		return err
+	}
 
 	// Refresh config after an auto-install so the new module's CUE value is
 	// visible. reloadConfig always uses merged scope: autoInstall writes to

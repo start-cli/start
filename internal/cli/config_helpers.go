@@ -508,8 +508,8 @@ func loadScopeConfigValue(scope config.Scope) (cue.Value, error) {
 	return result.Value, nil
 }
 
-// matchConfigByName enumerates installed candidates across all four categories
-// in scope through the shared gathering primitive, then applies the engine's
+// matchConfigByName enumerates installed candidates across the four
+// config-merge categories in scope through the shared gathering primitive, then applies the engine's
 // literal name-only rule — the exact-whole-name tier first and, only when it is
 // empty, the substring fallback — returning the full match set (not reduced to
 // one) ordered by category then name. The exact tier short-circuits the
@@ -521,7 +521,7 @@ func matchConfigByName(query string, scope config.Scope) ([]configMatch, error) 
 		return nil, err
 	}
 	cands := modules.GatherCandidates(
-		categoryKeys(describeCategories),
+		categoryKeys(configMergeCategories),
 		[]modules.InstalledSource{{Config: cfg, Scope: scope}},
 		nil,
 	)
@@ -696,10 +696,18 @@ func promptSelectFromList(w io.Writer, r io.Reader, entityType, query string, na
 func normalizeCategoryArg(arg string) string {
 	singular := strings.TrimSuffix(strings.ToLower(arg), "s")
 	switch singular {
-	case "agent", "role", "context", "task":
+	case "agent", "role", "context", "task", "skill":
 		return singular
 	}
 	return ""
+}
+
+// isSkillsCategoryQuery reports whether query names the skills category
+// (skill/skills, or a skills: prefix). list and update must reject these
+// rather than accept-then-succeed-empty.
+func isSkillsCategoryQuery(query string) bool {
+	before, _, _ := strings.Cut(query, ":")
+	return normalizeCategoryArg(before) == "skill"
 }
 
 type configMatch struct {

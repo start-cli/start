@@ -271,9 +271,8 @@ func printSearchSections(w io.Writer, sections []searchSection, verbose bool, in
 			grouped[r.Category] = append(grouped[r.Category], r)
 		}
 
-		categories := []string{"agents", "roles", "contexts", "tasks"}
 		firstCat := true
-		for _, cat := range categories {
+		for _, cat := range categoryKeys(describeCategories) {
 			catResults := grouped[cat]
 			if len(catResults) == 0 {
 				continue
@@ -308,7 +307,10 @@ func printSearchSections(w io.Writer, sections []searchSection, verbose bool, in
 	}
 }
 
-// collectInstalledNames returns a set of "category/name" keys for installed modules.
+// collectInstalledNames returns a set of "category/name" keys for installed
+// modules. Config-merge categories come from collectInstalledModules (the list
+// inventory). Skills are not a list category; their keys are read from the
+// skills inventory so library and search can mark them installed.
 func collectInstalledNames() map[string]bool {
 	paths, err := config.ResolvePaths("")
 	if err != nil || !paths.AnyExists() {
@@ -333,6 +335,9 @@ func collectInstalledNames() map[string]bool {
 	names := make(map[string]bool, len(installedModules))
 	for _, a := range installedModules {
 		names[a.Category+"/"+a.Name] = true
+	}
+	for name := range inventoryFromValue(cfg.Value) {
+		names["skills/"+name] = true
 	}
 	return names
 }

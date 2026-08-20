@@ -43,7 +43,7 @@ Array of installed-module objects. Empty result is `[]`.
 Object keyed by category. A category argument narrows it to that one key.
 
 ```
-{ agents: { <name>: entry }, roles: {...}, contexts: {...}, tasks: {...} }
+{ agents: { <name>: entry }, roles: {...}, contexts: {...}, tasks: {...}, skills: {...} }
 entry = { module, description?, tags?, version?, bin? }
 ```
 

@@ -38,16 +38,19 @@ func runConfigAdd(cmd *cobra.Command, args []string) error {
 	stdout := cmd.OutOrStdout()
 	local := getFlags(cmd).Local
 
-	if !isTerminal(stdin) {
-		return usageError(fmt.Errorf("interactive add requires a terminal"))
-	}
-
 	category := ""
 	if len(args) > 0 {
 		category = normalizeCategoryArg(args[0])
 		if category == "" {
 			return fmt.Errorf("unknown category %q: expected agent, role, context, or task", args[0])
 		}
+		if category == "skill" {
+			return usageError(fmt.Errorf("skills is not a config-merge module"))
+		}
+	}
+
+	if !isTerminal(stdin) {
+		return usageError(fmt.Errorf("interactive add requires a terminal"))
 	}
 
 	if category == "" {

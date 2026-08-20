@@ -64,7 +64,7 @@ func singleCategoryScope(category, displayType string, allowLocator bool) resolv
 }
 
 // crossCategoryScope builds the scope for the cross-category surfaces
-// (start get, start describe), spanning all four categories.
+// (start get, start describe), spanning all library categories.
 func crossCategoryScope() resolveScope {
 	return resolveScope{
 		categories:    describeCategories,
@@ -144,6 +144,22 @@ func interpretSurface(input string, scope resolveScope) (surfaceInterpretation, 
 // matcher over installed-plus-registry candidates, installing a chosen
 // registry-only match. The fallback floor is three characters.
 func (r *resolver) resolve(input string, scope resolveScope) (resolveOutcome, error) {
+	return r.resolveWith(input, scope, r)
+}
+
+// noInstallSource reuses the resolver's match rule but skips finalize, so a
+// registry-only skill is not auto-installed through InstallModule.
+type noInstallSource struct{ matchSource }
+
+func (s noInstallSource) finalize(m ModuleMatch) (ModuleMatch, error) { return m, nil }
+
+// resolveNoInstall is resolve without installIfRegistry. Get and describe of a
+// skill use this so they fetch-and-emit without writing skills.cue or dests.
+func (r *resolver) resolveNoInstall(input string, scope resolveScope) (resolveOutcome, error) {
+	return r.resolveWith(input, scope, noInstallSource{r})
+}
+
+func (r *resolver) resolveWith(input string, scope resolveScope, src matchSource) (resolveOutcome, error) {
 	interp, err := interpretSurface(input, scope)
 	if err != nil {
 		return resolveOutcome{}, err
@@ -162,7 +178,7 @@ func (r *resolver) resolve(input string, scope resolveScope) (resolveOutcome, er
 		return resolveOutcome{}, notFoundError(fmt.Errorf("%s %q not found", scope.displayType, input))
 	}
 
-	return r.selector().match(r, interp.name, interp.cats, interp.mode, scope, 3)
+	return r.selector().match(src, interp.name, interp.cats, interp.mode, scope, 3)
 }
 
 // matchSource supplies match candidates and finalisation for the shared matcher,

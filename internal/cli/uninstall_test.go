@@ -372,7 +372,7 @@ func TestRemoveResolvedItems_WarnsOnDefaultAgent(t *testing.T) {
 	stderr := &bytes.Buffer{}
 	items := []configMatch{{Name: "claude", Category: "agent"}}
 
-	errs := removeResolvedItems(stdout, stderr, items, false, false, "claude")
+	errs := removeResolvedItems(nil, stdout, stderr, items, false, false, "claude")
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -396,7 +396,7 @@ func TestRemoveResolvedItems_NonDefaultNoWarning(t *testing.T) {
 	stderr := &bytes.Buffer{}
 	items := []configMatch{{Name: "gpt", Category: "agent"}}
 
-	if errs := removeResolvedItems(stdout, stderr, items, false, false, "claude"); len(errs) != 0 {
+	if errs := removeResolvedItems(nil, stdout, stderr, items, false, false, "claude"); len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
 	if strings.Contains(stderr.String(), "default_agent") {
