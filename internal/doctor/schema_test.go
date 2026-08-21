@@ -9,6 +9,7 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
 	"github.com/p3bot/start/internal/config"
+	"github.com/p3bot/start/internal/skills"
 )
 
 // testSchemaSet mirrors the production schemas in library/schemas/.
@@ -65,6 +66,11 @@ func testSchemaSet(t *testing.T) SchemaSet {
 	timeout?: int & >0
 	library_index?: string & !=""
 }
+
+#SkillInstall: {
+	origin: string & !=""
+	version: string & !=""
+}
 `
 
 	v := cctx.CompileString(schemaSource)
@@ -73,12 +79,76 @@ func testSchemaSet(t *testing.T) SchemaSet {
 	}
 
 	return SchemaSet{
-		Agent:    v.LookupPath(cue.ParsePath("#Agent")),
-		Role:     v.LookupPath(cue.ParsePath("#Role")),
-		Context:  v.LookupPath(cue.ParsePath("#Context")),
-		Task:     v.LookupPath(cue.ParsePath("#Task")),
-		Settings: v.LookupPath(cue.ParsePath("#Settings")),
+		Agent:        v.LookupPath(cue.ParsePath("#Agent")),
+		Role:         v.LookupPath(cue.ParsePath("#Role")),
+		Context:      v.LookupPath(cue.ParsePath("#Context")),
+		Task:         v.LookupPath(cue.ParsePath("#Task")),
+		Settings:     v.LookupPath(cue.ParsePath("#Settings")),
+		SkillInstall: v.LookupPath(cue.ParsePath("#SkillInstall")),
 	}
+}
+
+func writeSchemasModule(t *testing.T, dir, body string) {
+	t.Helper()
+	modDir := filepath.Join(dir, "cue.mod")
+	if err := os.MkdirAll(modDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	moduleCue := "module: \"test.example/schemas@v0\"\nlanguage: version: \"v0.16.0\"\n"
+	if err := os.WriteFile(filepath.Join(modDir, "module.cue"), []byte(moduleCue), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "schemas.cue"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoadSchemas_SkillInstall(t *testing.T) {
+	t.Parallel()
+
+	t.Run("present", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeSchemasModule(t, dir, `package schemas
+
+#Agent: {command: string}
+#Role: {}
+#Context: {}
+#Task: {}
+#Settings: {}
+#SkillInstall: {
+	origin: string & !=""
+	version: string & !=""
+}
+`)
+		schemas, err := LoadSchemas(dir, nil)
+		if err != nil {
+			t.Fatalf("LoadSchemas: %v", err)
+		}
+		if !schemas.SkillInstall.Exists() {
+			t.Fatal("#SkillInstall was not loaded")
+		}
+	})
+
+	t.Run("absent", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeSchemasModule(t, dir, `package schemas
+
+#Agent: {command: string}
+#Role: {}
+#Context: {}
+#Task: {}
+#Settings: {}
+`)
+		schemas, err := LoadSchemas(dir, nil)
+		if err != nil {
+			t.Fatalf("LoadSchemas: %v", err)
+		}
+		if schemas.SkillInstall.Exists() {
+			t.Fatal("missing #SkillInstall should not exist")
+		}
+	})
 }
 
 func writeConfigFile(t *testing.T, dir, name, content string) {
@@ -225,6 +295,71 @@ agents: "myagent": {
 	if section.Results[0].Status != StatusPass {
 		t.Errorf("status = %v, want StatusPass (extra fields should be allowed)", section.Results[0].Status)
 	}
+}
+
+func TestCheckSchemaValidation_MissingAgentCommandPasses(t *testing.T) {
+	t.Parallel()
+	schemas := testSchemaSet(t)
+	tmpDir := t.TempDir()
+
+	writeConfigFile(t, tmpDir, "agents.cue", `
+agents: "incomplete": {
+	description: "no command"
+}
+`)
+
+	paths := config.Paths{
+		Global:       tmpDir,
+		GlobalExists: true,
+		Local:        filepath.Join(tmpDir, "nonexistent"),
+		LocalExists:  false,
+	}
+
+	section := CheckSchemaValidation(paths, schemas)
+
+	if len(section.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %+v", len(section.Results), section.Results)
+	}
+	if section.Results[0].Status != StatusPass {
+		t.Errorf("status = %v, want StatusPass (missing command is incomplete, not a schema issue): %+v", section.Results[0].Status, section.Results[0])
+	}
+}
+
+func TestUnifyAndValidate_PoliciesIndependent(t *testing.T) {
+	t.Parallel()
+	schemas := testSchemaSet(t)
+	cctx := cuecontext.New()
+
+	incomplete := cctx.CompileString(`{description: "no command"}`)
+	if err := incomplete.Err(); err != nil {
+		t.Fatal(err)
+	}
+	extra := cctx.CompileString(`{command: "ok", extra: true}`)
+	if err := extra.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("concrete allows extra", func(t *testing.T) {
+		t.Parallel()
+		cat := categorySchema{schema: schemas.Agent, requireConcrete: true}
+		if err := unifyAndValidate(cat, incomplete); err == nil {
+			t.Error("missing command should fail when requireConcrete is set")
+		}
+		if err := unifyAndValidate(cat, extra); err != nil {
+			t.Errorf("extra field should pass when rejectExtra is unset: %v", err)
+		}
+	})
+
+	t.Run("reject extra allows incomplete", func(t *testing.T) {
+		t.Parallel()
+		cat := categorySchema{schema: schemas.Agent, rejectExtra: true}
+		if err := unifyAndValidate(cat, incomplete); err != nil {
+			t.Errorf("missing command should pass when requireConcrete is unset: %v", err)
+		}
+		if err := unifyAndValidate(cat, extra); err == nil {
+			t.Error("extra field should fail when rejectExtra is set")
+		}
+	})
 }
 
 func TestCheckSchemaValidation_InvalidSettings(t *testing.T) {
@@ -475,6 +610,233 @@ roles: "bad": {
 	}
 	if !found {
 		t.Errorf("expected StatusWarn for bad tag format, got results: %+v", section.Results)
+	}
+}
+
+func TestCheckSchemaValidation_ValidSkills(t *testing.T) {
+	t.Parallel()
+	schemas := testSchemaSet(t)
+	tmpDir := t.TempDir()
+
+	if err := skills.Upsert(tmpDir, "finding/one-by-one", "github.com/p3bot/library/skills/finding/one-by-one@v1", "v1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	if err := skills.Upsert(tmpDir, "review/pre-commit", "github.com/p3bot/library/skills/review/pre-commit@v1", "v1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+
+	paths := config.Paths{
+		Global:       tmpDir,
+		GlobalExists: true,
+		Local:        filepath.Join(tmpDir, "nonexistent"),
+		LocalExists:  false,
+	}
+
+	section := CheckSchemaValidation(paths, schemas)
+
+	if len(section.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %+v", len(section.Results), section.Results)
+	}
+	if section.Results[0].Status != StatusPass {
+		t.Errorf("status = %v, want StatusPass: %+v", section.Results[0].Status, section.Results[0])
+	}
+	if section.Results[0].Label != "skills.cue" {
+		t.Errorf("label = %q, want %q", section.Results[0].Label, "skills.cue")
+	}
+	if section.Name != "Schema Validation" {
+		t.Errorf("section = %q, want Schema Validation", section.Name)
+	}
+}
+
+func TestCheckSchemaValidation_SkillsIssues(t *testing.T) {
+	t.Parallel()
+	schemas := testSchemaSet(t)
+
+	tests := []struct {
+		name    string
+		content string
+		wantKey string
+	}{
+		{
+			name: "missing origin",
+			content: `skills: "finding/one-by-one": {
+	version: "v1.0.0"
+}
+`,
+			wantKey: "skills.finding/one-by-one",
+		},
+		{
+			name: "missing version",
+			content: `skills: "finding/one-by-one": {
+	origin: "github.com/p3bot/library/skills/finding/one-by-one@v1"
+}
+`,
+			wantKey: "skills.finding/one-by-one",
+		},
+		{
+			name: "empty origin",
+			content: `skills: "finding/one-by-one": {
+	origin: ""
+	version: "v1.0.0"
+}
+`,
+			wantKey: "skills.finding/one-by-one",
+		},
+		{
+			name: "empty version",
+			content: `skills: "finding/one-by-one": {
+	origin: "github.com/p3bot/library/skills/finding/one-by-one@v1"
+	version: ""
+}
+`,
+			wantKey: "skills.finding/one-by-one",
+		},
+		{
+			name: "dests extra field",
+			content: `skills: "finding/one-by-one": {
+	origin: "github.com/p3bot/library/skills/finding/one-by-one@v1"
+	version: "v1.0.0"
+	dests: ["~/.agents/skills"]
+}
+`,
+			wantKey: "skills.finding/one-by-one",
+		},
+		{
+			name: "targets extra field",
+			content: `skills: "finding/one-by-one": {
+	origin: "github.com/p3bot/library/skills/finding/one-by-one@v1"
+	version: "v1.0.0"
+	targets: ["claude"]
+}
+`,
+			wantKey: "skills.finding/one-by-one",
+		},
+		{
+			name: "skill-shaped without version",
+			content: `skills: "finding/one-by-one": {
+	description: "Walk findings one by one"
+	file: "@module/SKILL.md"
+}
+`,
+			wantKey: "skills.finding/one-by-one",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tmpDir := t.TempDir()
+			writeConfigFile(t, tmpDir, "skills.cue", tt.content)
+
+			paths := config.Paths{
+				Global:       tmpDir,
+				GlobalExists: true,
+				Local:        filepath.Join(tmpDir, "nonexistent"),
+				LocalExists:  false,
+			}
+
+			section := CheckSchemaValidation(paths, schemas)
+
+			found := false
+			for _, r := range section.Results {
+				if r.Status == StatusWarn && strings.Contains(r.Message, tt.wantKey) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("expected StatusWarn for %s, got results: %+v", tt.wantKey, section.Results)
+			}
+		})
+	}
+}
+
+func TestCheckSchemaValidation_SkillsAbsentDefinitionSkipped(t *testing.T) {
+	t.Parallel()
+	schemas := testSchemaSet(t)
+	schemas.SkillInstall = cue.Value{}
+	tmpDir := t.TempDir()
+
+	writeConfigFile(t, tmpDir, "agents.cue", `
+agents: "claude": {
+	command: "claude {{.prompt}}"
+}
+`)
+	writeConfigFile(t, tmpDir, "skills.cue", `
+skills: "finding/one-by-one": {
+	origin: "github.com/p3bot/library/skills/finding/one-by-one@v1"
+	version: "v1.0.0"
+	dests: ["~/.agents/skills"]
+}
+`)
+
+	paths := config.Paths{
+		Global:       tmpDir,
+		GlobalExists: true,
+		Local:        filepath.Join(tmpDir, "nonexistent"),
+		LocalExists:  false,
+	}
+
+	section := CheckSchemaValidation(paths, schemas)
+
+	for _, r := range section.Results {
+		if strings.Contains(r.Label, "skills") || strings.Contains(r.Message, "skills") {
+			t.Errorf("missing #SkillInstall should skip skills, got %+v", r)
+		}
+		if r.Status == StatusWarn || r.Status == StatusFail {
+			t.Errorf("absent definition must not fail Schema Validation, got %+v", r)
+		}
+	}
+
+	if len(section.Results) != 1 || section.Results[0].Status != StatusPass || section.Results[0].Label != "agents.cue" {
+		t.Errorf("expected agents.cue pass only, got %+v", section.Results)
+	}
+}
+
+func TestCheckSchemaValidation_SkillsGlobalAndLocal(t *testing.T) {
+	t.Parallel()
+	schemas := testSchemaSet(t)
+	tmpDir := t.TempDir()
+	globalDir := filepath.Join(tmpDir, "global")
+	localDir := filepath.Join(tmpDir, "local")
+	if err := os.MkdirAll(globalDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(localDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := skills.Upsert(globalDir, "finding/one-by-one", "github.com/p3bot/library/skills/finding/one-by-one@v1", "v1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	writeConfigFile(t, localDir, "skills.cue", `
+skills: "review/pre-commit": {
+	origin: "github.com/p3bot/library/skills/review/pre-commit@v1"
+	version: "v1.0.0"
+	dests: ["~/.agents/skills"]
+}
+`)
+
+	paths := config.Paths{
+		Global:       globalDir,
+		GlobalExists: true,
+		Local:        localDir,
+		LocalExists:  true,
+	}
+
+	section := CheckSchemaValidation(paths, schemas)
+
+	var pass, warn bool
+	for _, r := range section.Results {
+		if r.Status == StatusPass && r.Label == "skills.cue" {
+			pass = true
+		}
+		if r.Status == StatusWarn && strings.Contains(r.Message, "skills.review/pre-commit") {
+			warn = true
+		}
+	}
+	if !pass || !warn {
+		t.Errorf("expected global pass and local warn, got %+v", section.Results)
 	}
 }
 

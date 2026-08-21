@@ -68,6 +68,7 @@ const schemaFixtureBody = `package schemas
 #Context: {...}
 #Task: {...}
 #Settings: {...}
+#SkillInstall: {...}
 `
 
 // sentinelModuleBase is the sentinel agent's module path with major version.

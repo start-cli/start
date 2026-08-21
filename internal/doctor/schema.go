@@ -18,11 +18,12 @@ import (
 
 // SchemaSet holds parsed CUE schema definitions for validation.
 type SchemaSet struct {
-	Agent    cue.Value
-	Role     cue.Value
-	Context  cue.Value
-	Task     cue.Value
-	Settings cue.Value
+	Agent        cue.Value
+	Role         cue.Value
+	Context      cue.Value
+	Task         cue.Value
+	Settings     cue.Value
+	SkillInstall cue.Value
 }
 
 // LoadSchemas loads CUE schema definitions from a fetched module directory.
@@ -51,19 +52,22 @@ func LoadSchemas(dir string, reg modconfig.Registry) (SchemaSet, error) {
 	}
 
 	return SchemaSet{
-		Agent:    v.LookupPath(cue.ParsePath("#Agent")),
-		Role:     v.LookupPath(cue.ParsePath("#Role")),
-		Context:  v.LookupPath(cue.ParsePath("#Context")),
-		Task:     v.LookupPath(cue.ParsePath("#Task")),
-		Settings: v.LookupPath(cue.ParsePath("#Settings")),
+		Agent:        v.LookupPath(cue.ParsePath("#Agent")),
+		Role:         v.LookupPath(cue.ParsePath("#Role")),
+		Context:      v.LookupPath(cue.ParsePath("#Context")),
+		Task:         v.LookupPath(cue.ParsePath("#Task")),
+		Settings:     v.LookupPath(cue.ParsePath("#Settings")),
+		SkillInstall: v.LookupPath(cue.ParsePath("#SkillInstall")),
 	}, nil
 }
 
 // categorySchema maps a top-level config key to the corresponding schema.
 type categorySchema struct {
-	key    string
-	schema cue.Value
-	isMap  bool // collection (agents, roles, ...) vs single struct (settings)
+	key             string
+	schema          cue.Value
+	isMap           bool // collection (agents, roles, ...) vs single struct (settings)
+	requireConcrete bool // missing required fields fail
+	rejectExtra     bool // extra fields fail; otherwise they are ignored
 }
 
 // CheckSchemaValidation validates config files against CUE schemas.
@@ -75,6 +79,7 @@ func CheckSchemaValidation(paths config.Paths, schemas SchemaSet) SectionResult 
 		{key: internalcue.KeyRoles, schema: schemas.Role, isMap: true},
 		{key: internalcue.KeyContexts, schema: schemas.Context, isMap: true},
 		{key: internalcue.KeyTasks, schema: schemas.Task, isMap: true},
+		{key: internalcue.KeySkills, schema: schemas.SkillInstall, isMap: true, requireConcrete: true, rejectExtra: true},
 		{key: internalcue.KeySettings, schema: schemas.Settings, isMap: false},
 	}
 
@@ -150,8 +155,7 @@ func validateSingleFile(cctx *cue.Context, filePath string, categories []categor
 		hasKeys = true
 
 		if !cat.isMap {
-			unified := cat.schema.Unify(topLevel)
-			if err := filterAllowedFieldErrors(unified.Validate()); err != nil {
+			if err := unifyAndValidate(cat, topLevel); err != nil {
 				hasErrors = true
 				results = append(results, CheckResult{
 					Status:  StatusWarn,
@@ -172,8 +176,7 @@ func validateSingleFile(cctx *cue.Context, filePath string, categories []categor
 			entryName := iter.Selector().Unquoted()
 			entryValue := iter.Value()
 
-			unified := cat.schema.Unify(entryValue)
-			if err := filterAllowedFieldErrors(unified.Validate()); err != nil {
+			if err := unifyAndValidate(cat, entryValue); err != nil {
 				hasErrors = true
 				results = append(results, CheckResult{
 					Status:  StatusWarn,
@@ -193,6 +196,20 @@ func validateSingleFile(cctx *cue.Context, filePath string, categories []categor
 	}
 
 	return results
+}
+
+func unifyAndValidate(cat categorySchema, value cue.Value) error {
+	unified := cat.schema.Unify(value)
+	var err error
+	if cat.requireConcrete {
+		err = unified.Validate(cue.Concrete(true))
+	} else {
+		err = unified.Validate()
+	}
+	if !cat.rejectExtra {
+		return filterAllowedFieldErrors(err)
+	}
+	return err
 }
 
 // filterAllowedFieldErrors drops "field not allowed" errors so configs may carry
