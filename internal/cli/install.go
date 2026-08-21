@@ -73,6 +73,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	w := cmd.OutOrStdout()
+	errW := cmd.ErrOrStderr()
 	stdin := cmd.InOrStdin()
 	var validated []string
 	for _, q := range args {
@@ -150,7 +151,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 			}
 			errs = append(errs, fmt.Errorf("%s: %w", query, err))
 			if len(args) > 1 {
-				fmt.Fprintf(w, "Error installing %q: %v\n", query, err)
+				fmt.Fprintf(errW, "Error installing %q: %v\n", query, err)
 			}
 		}
 	}
@@ -161,6 +162,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 // installModule searches for, selects, and installs a single module.
 func installModule(ctx context.Context, cmd *cobra.Command, prog *tui.Progress, client registry.Client, index *registry.Index, query, configDir, scopeName string, flags *Flags, cfg cue.Value, dryRunNoted *bool) error {
 	w := cmd.OutOrStdout()
+	errW := cmd.ErrOrStderr()
 
 	// Install enumerates registry candidates through the shared primitive and
 	// applies search's regex/tag matcher on top, so it keeps matching names,
@@ -197,13 +199,13 @@ func installModule(ctx context.Context, cmd *cobra.Command, prog *tui.Progress, 
 	for _, selected := range selections {
 		if selected.Category == "skills" {
 			if err := installSkill(ctx, w, cmd, client, selected, configDir, scopeName, flags); err != nil {
-				fmt.Fprintf(w, "Error installing %s: %v\n", formatAddress(selected.Category, selected.Name), err)
+				fmt.Fprintf(errW, "Error installing %s: %v\n", formatAddress(selected.Category, selected.Name), err)
 				errs = append(errs, silenced(err))
 			}
 			continue
 		}
 		if err := installSingleModule(ctx, w, prog, client, index, selected, configDir, scopeName, flags, cfg); err != nil {
-			fmt.Fprintf(w, "Error installing %s: %v\n", formatAddress(selected.Category, selected.Name), err)
+			fmt.Fprintf(errW, "Error installing %s: %v\n", formatAddress(selected.Category, selected.Name), err)
 			errs = append(errs, silenced(err))
 		}
 	}

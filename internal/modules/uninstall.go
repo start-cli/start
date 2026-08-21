@@ -13,8 +13,9 @@ import (
 // struct in the config file, the inverse of writeModuleToConfig. It parses with
 // comments preserved, mutates the AST, and reformats with format.Simplify() so
 // the install-managed header and unrelated entries survive. An emptied category
-// struct is dropped entirely. Returns an error when the file, category, or
-// module field is absent.
+// struct is dropped entirely; if the file then holds no category fields it is
+// removed rather than left as a comment-only husk. Returns an error when the
+// file, category, or module field is absent.
 func RemoveModuleFromConfig(configPath, category, name string) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -45,12 +46,27 @@ func RemoveModuleFromConfig(configPath, category, name string) error {
 	if len(catStruct.Elts) == 0 {
 		removeFileDecl(file, category)
 	}
+	if !fileHasConfigFields(file) {
+		if err := os.Remove(configPath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("removing emptied config file: %w", err)
+		}
+		return nil
+	}
 
 	formatted, err := format.Node(file, format.Simplify())
 	if err != nil {
 		return fmt.Errorf("formatting config: %w", err)
 	}
 	return os.WriteFile(configPath, formatted, 0644)
+}
+
+func fileHasConfigFields(file *ast.File) bool {
+	for _, decl := range file.Decls {
+		if _, ok := decl.(*ast.Field); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // removeStructField removes the field labelled name from s, reporting whether it

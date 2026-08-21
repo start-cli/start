@@ -82,7 +82,7 @@ func newResolver(cfg internalcue.LoadResult, flags *Flags, stdout, stderr io.Wri
 	if offlineRegistryForTests {
 		src = offlineIndexSource{}
 	} else {
-		src = newProductionIndexSource(flags, stdout, stderr)
+		src = newProductionIndexSource(flags, stderr)
 	}
 	return &resolver{
 		cfg:      cfg,
@@ -378,18 +378,17 @@ type indexSource interface {
 
 // productionIndexSource holds the live index-acquisition mechanism: effective-
 // path computation, the decideCachedIndex cache-gating call, the conditional
-// "Fetching registry index..." progress line, client construction, the slow-
-// warning goroutine, FetchIndex, and the best-effort cache write on a live
+// "Fetching registry index..." progress line (stderr), client construction, the
+// slow-warning goroutine, FetchIndex, and the best-effort cache write on a live
 // resolve. It is the single place in the resolver's dependency graph that calls
 // registry.NewClient.
 type productionIndexSource struct {
 	flags  *Flags
-	stdout io.Writer
 	stderr io.Writer
 }
 
-func newProductionIndexSource(flags *Flags, stdout, stderr io.Writer) *productionIndexSource {
-	return &productionIndexSource{flags: flags, stdout: stdout, stderr: stderr}
+func newProductionIndexSource(flags *Flags, stderr io.Writer) *productionIndexSource {
+	return &productionIndexSource{flags: flags, stderr: stderr}
 }
 
 // fetch resolves the index under the cache-gating rule. Client construction and
@@ -408,7 +407,7 @@ func (s *productionIndexSource) fetch(ctx context.Context, wantLive bool) (*regi
 		debugf(s.stderr, s.flags, dbgResolve, "Using cached index version: %s", cachedVersion)
 		indexPath = cachedVersion
 	} else if !s.flags.Quiet {
-		fmt.Fprintf(s.stdout, "Fetching registry index...\n")
+		fmt.Fprintf(s.stderr, "Fetching registry index...\n")
 	}
 
 	client, err := registry.NewClient()
@@ -428,7 +427,7 @@ func (s *productionIndexSource) fetch(ctx context.Context, wantLive bool) (*regi
 			select {
 			case <-time.After(slowWarning):
 				remaining := fetchTimeout - slowWarning
-				printWarning(s.stdout, "registry is taking longer than expected, timeout in %d seconds", int(remaining.Seconds()))
+				printWarning(s.stderr, "registry is taking longer than expected, timeout in %d seconds", int(remaining.Seconds()))
 			case <-ctx.Done():
 			}
 		}()

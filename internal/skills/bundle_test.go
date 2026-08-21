@@ -90,6 +90,40 @@ func TestMaterialiseOverwritesAndDropsLeftovers(t *testing.T) {
 	}
 }
 
+func TestMaterialiseDestFilesAreWritable(t *testing.T) {
+	t.Parallel()
+	src := writeBundle(t)
+	if err := os.Chmod(filepath.Join(src, "SKILL.md"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(src, "scripts/run.sh"), 0o555); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(t.TempDir(), "one-by-one")
+	if err := Materialise(src, dest); err != nil {
+		t.Fatal(err)
+	}
+
+	skill, err := os.Stat(filepath.Join(dest, "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if skill.Mode().Perm()&0o200 == 0 {
+		t.Errorf("dest SKILL.md perm = %o, want owner-writable", skill.Mode().Perm())
+	}
+
+	script, err := os.Stat(filepath.Join(dest, "scripts/run.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if script.Mode().Perm()&0o200 == 0 {
+		t.Errorf("dest run.sh perm = %o, want owner-writable", script.Mode().Perm())
+	}
+	if script.Mode().Perm()&0o100 == 0 {
+		t.Errorf("dest run.sh perm = %o, want executable", script.Mode().Perm())
+	}
+}
+
 func writeBundle(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

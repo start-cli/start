@@ -205,7 +205,9 @@ name-only matcher (`MatchByName`); `start search` and `start install` use the
 regex/tag matcher (`MatchSearch`) over the same candidates, matching names,
 descriptions, and tags; `start update` keeps its `collectInstalledModules`
 inventory (which carries version/config-file metadata the primitive does not) and
-matches it by shared name (`NameMatches`) or category substring. The
+matches a bare query by shared name (`NameMatches`) or category substring. A
+`skills:` address uses the same exact→prefix reduction as uninstall over that
+inventory, then dest-leaf fallback on a miss. The
 installed-over-registry merge and `category:name` de-duplication (`mergeMatches`)
 is a resolution-only step layered after gathering, not part of the primitive, so
 `search` keeps its local/global/registry sections and `install` keeps each

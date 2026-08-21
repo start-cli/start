@@ -241,7 +241,18 @@ func skillUninstallPlan(cmd *cobra.Command, name string, local bool) (dests []st
 	if err != nil {
 		return nil, "", err
 	}
-	return dests, paths.Dir(local), nil
+	return existingSkillDests(dests), paths.Dir(local), nil
+}
+
+func existingSkillDests(dests []string) []string {
+	var out []string
+	for _, dest := range dests {
+		_, err := os.Stat(dest)
+		if !os.IsNotExist(err) {
+			out = append(out, dest)
+		}
+	}
+	return out
 }
 
 func uninstallSkill(stdout io.Writer, cmd *cobra.Command, name string, local, quiet bool) error {

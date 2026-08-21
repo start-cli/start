@@ -138,8 +138,10 @@ the literal name-only matcher (`MatchByName`); `start search` and `start install
 use a regex/tag matcher (`MatchSearch`) over the same candidates, matching names,
 descriptions, and tags. `start update` is the one surface not on the primitive:
 it keeps its own installed inventory (`collectInstalledModules`, which carries
-version and config-file metadata the primitive does not) and matches it by
-shared name or category substring. The installed-over-registry merge and
+version and config-file metadata the primitive does not) and matches a bare
+query by shared name or category substring. A `skills:` address uses the same
+exact→prefix reduction as uninstall over that inventory, then dest-leaf
+fallback on a miss. The installed-over-registry merge and
 `category:name` de-duplication
 described below are a resolution-only step layered after gathering, not part of
 the primitive. What is unified is the gathering beneath the surfaces, not the
@@ -286,7 +288,9 @@ inventory key first, then keys whose last path segment equals the name
 (`skills:one-by-one` → `finding/one-by-one`). Installed keys are tried first;
 if none match, `get`/`describe` try the registry index. Zero is not-found, one
 is used, more than one menus or errors. `start uninstall` and `start update`
-use the same leaf rule over installed inventory only.
+use the same exact→prefix reduction, then the same leaf rule over installed
+inventory only — so `skills:finding` with two `finding/...` keys is a prefix
+multi-match on all four surfaces.
 
 Examples:
 

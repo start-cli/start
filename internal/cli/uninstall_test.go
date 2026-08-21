@@ -91,7 +91,7 @@ func readFileString(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return ""
+		t.Fatalf("reading %s: %v", path, err)
 	}
 	return string(data)
 }
@@ -165,12 +165,8 @@ func TestUninstall_EmptiedCategoryStructIsRemoved(t *testing.T) {
 		t.Fatalf("uninstall review: %v", err)
 	}
 
-	tasks := readFileString(t, filepath.Join(globalDir, "tasks.cue"))
-	if strings.Contains(tasks, "review") {
-		t.Errorf("review should be removed:\n%s", tasks)
-	}
-	if strings.Contains(tasks, "tasks:") {
-		t.Errorf("emptied tasks category should be dropped, not left as tasks: {}:\n%s", tasks)
+	if _, err := os.Stat(filepath.Join(globalDir, "tasks.cue")); !os.IsNotExist(err) {
+		t.Fatalf("emptied tasks.cue should be removed, stat: %v", err)
 	}
 }
 
@@ -227,20 +223,26 @@ func TestUninstall_MultipleQueriesEachReported(t *testing.T) {
 	if strings.Contains(readFileString(t, filepath.Join(globalDir, "agents.cue")), "gpt") {
 		t.Error("gpt should be removed")
 	}
-	if strings.Contains(readFileString(t, filepath.Join(globalDir, "tasks.cue")), "review") {
-		t.Error("review should be removed")
+	if _, err := os.Stat(filepath.Join(globalDir, "tasks.cue")); !os.IsNotExist(err) {
+		t.Fatalf("emptied tasks.cue should be removed, stat: %v", err)
 	}
 }
 
 func TestUninstall_MultiQueryFailureDoesNotAbortRest(t *testing.T) {
 	globalDir := seedGlobalConfig(t)
 
-	stdout, _, err := runUninstallCmd(t, "uninstall", "does-not-exist", "gpt", "--force")
+	stdout, stderr, err := runUninstallCmd(t, "uninstall", "does-not-exist", "gpt", "--force")
 	if err == nil {
 		t.Fatal("expected error from the unresolved query")
 	}
 	if !strings.Contains(err.Error(), "not found") {
 		t.Errorf("expected not-found error, got: %v", err)
+	}
+	if strings.Contains(stdout, "Error removing") {
+		t.Errorf("Error removing must not appear on stdout, got:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, `Error removing "does-not-exist"`) {
+		t.Errorf("want Error removing on stderr, got:\n%s", stderr)
 	}
 	if !strings.Contains(stdout, `Removed agent "gpt"`) {
 		t.Errorf("gpt should still be removed despite sibling failure:\n%s", stdout)
@@ -342,8 +344,8 @@ func TestUninstall_ShortNameRemovable(t *testing.T) {
 	if _, _, err := runUninstallCmd(t, "uninstall", "a", "--force"); err != nil {
 		t.Fatalf("uninstall short name: %v", err)
 	}
-	if strings.Contains(readFileString(t, filepath.Join(globalDir, "agents.cue")), "\ta:") {
-		t.Error("one-character agent should be removable by exact name")
+	if _, err := os.Stat(filepath.Join(globalDir, "agents.cue")); !os.IsNotExist(err) {
+		t.Fatalf("emptied agents.cue should be removed, stat: %v", err)
 	}
 }
 
@@ -463,11 +465,11 @@ func TestRemoveResolvedItems_FailedItemIsSilent(t *testing.T) {
 	if !IsSilentError(joined) {
 		t.Fatal("removal already printed the fault; main.go must not reprint")
 	}
-	if !strings.Contains(stdout.String(), `Error removing nope "x"`) {
-		t.Errorf("want Error removing line, got:\n%s", stdout)
+	if strings.Contains(stdout.String(), `Error removing nope "x"`) {
+		t.Errorf("Error removing must not appear on stdout, got:\n%s", stdout)
 	}
-	if stderr.Len() != 0 {
-		t.Errorf("stderr must stay empty, got: %q", stderr)
+	if !strings.Contains(stderr.String(), `Error removing nope "x"`) {
+		t.Errorf("want Error removing line on stderr, got: %q", stderr)
 	}
 }
 

@@ -191,7 +191,7 @@ func runRemoval(cmd *cobra.Command, queries []string, local, force bool) error {
 		if err != nil {
 			errs = append(errs, err)
 			if len(queries) > 1 {
-				fmt.Fprintf(stdout, "Error removing %q: %v\n", q, err)
+				fmt.Fprintf(stderr, "Error removing %q: %v\n", q, err)
 			}
 			continue
 		}
@@ -244,13 +244,13 @@ func removeResolvedItems(cmd *cobra.Command, stdout, stderr io.Writer, items []c
 	for _, m := range items {
 		if dryRun {
 			if err := previewRemoval(cmd, stdout, m, local, quiet); err != nil {
-				fmt.Fprintf(stdout, "Error previewing %s %q: %v\n", m.Category, m.Name, err)
+				fmt.Fprintf(stderr, "Error previewing %s %q: %v\n", m.Category, m.Name, err)
 				errs = append(errs, silenced(fmt.Errorf("previewing %s %q: %w", m.Category, m.Name, err)))
 			}
 			continue
 		}
 		if err := removeConfigItem(cmd, m, local); err != nil {
-			fmt.Fprintf(stdout, "Error removing %s %q: %v\n", m.Category, m.Name, err)
+			fmt.Fprintf(stderr, "Error removing %s %q: %v\n", m.Category, m.Name, err)
 			errs = append(errs, silenced(fmt.Errorf("removing %s %q: %w", m.Category, m.Name, err)))
 			continue
 		}

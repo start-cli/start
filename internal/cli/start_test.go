@@ -1866,15 +1866,15 @@ func TestEnsureIndex_FreshCacheSkipsFetchMessage(t *testing.T) {
 		t.Fatalf("loading config: %v", err)
 	}
 
-	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
 	flags := &Flags{}
-	r := newResolver(cfg, flags, stdout, io.Discard, strings.NewReader(""))
-	r.indexSrc = newProductionIndexSource(flags, stdout, io.Discard) // drive the real mechanism, overriding the offline default
+	r := newResolver(cfg, flags, io.Discard, stderr, strings.NewReader(""))
+	r.indexSrc = newProductionIndexSource(flags, stderr) // drive the real mechanism, overriding the offline default
 
 	_, _, _ = r.ensureIndex()
 
-	if strings.Contains(stdout.String(), "Fetching registry index") {
-		t.Errorf("fresh cache should skip 'Fetching registry index...' message, got:\n%s", stdout.String())
+	if strings.Contains(stderr.String(), "Fetching registry index") {
+		t.Errorf("fresh cache should skip 'Fetching registry index...' message, got:\n%s", stderr.String())
 	}
 }
 
@@ -1903,15 +1903,15 @@ func TestEnsureIndex_StaleCacheShowsFetchMessage(t *testing.T) {
 		t.Fatalf("loading config: %v", err)
 	}
 
-	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
 	flags := &Flags{}
-	r := newResolver(cfg, flags, stdout, io.Discard, strings.NewReader(""))
-	r.indexSrc = newProductionIndexSource(flags, stdout, io.Discard) // drive the real mechanism, overriding the offline default
+	r := newResolver(cfg, flags, io.Discard, stderr, strings.NewReader(""))
+	r.indexSrc = newProductionIndexSource(flags, stderr) // drive the real mechanism, overriding the offline default
 
 	_, _, _ = r.ensureIndex()
 
-	if !strings.Contains(stdout.String(), "Fetching registry index") {
-		t.Errorf("stale cache should show 'Fetching registry index...' message, got:\n%s", stdout.String())
+	if !strings.Contains(stderr.String(), "Fetching registry index") {
+		t.Errorf("stale cache should show 'Fetching registry index...' message, got:\n%s", stderr.String())
 	}
 }
 
@@ -1927,15 +1927,15 @@ func TestEnsureIndex_MissingCacheShowsFetchMessage(t *testing.T) {
 		t.Fatalf("loading config: %v", err)
 	}
 
-	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
 	flags := &Flags{}
-	r := newResolver(cfg, flags, stdout, io.Discard, strings.NewReader(""))
-	r.indexSrc = newProductionIndexSource(flags, stdout, io.Discard) // drive the real mechanism, overriding the offline default
+	r := newResolver(cfg, flags, io.Discard, stderr, strings.NewReader(""))
+	r.indexSrc = newProductionIndexSource(flags, stderr) // drive the real mechanism, overriding the offline default
 
 	_, _, _ = r.ensureIndex()
 
-	if !strings.Contains(stdout.String(), "Fetching registry index") {
-		t.Errorf("missing cache should show 'Fetching registry index...' message, got:\n%s", stdout.String())
+	if !strings.Contains(stderr.String(), "Fetching registry index") {
+		t.Errorf("missing cache should show 'Fetching registry index...' message, got:\n%s", stderr.String())
 	}
 }
 
@@ -1951,15 +1951,15 @@ func TestEnsureIndex_QuietSuppressesFetchMessage(t *testing.T) {
 		t.Fatalf("loading config: %v", err)
 	}
 
-	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
 	flags := &Flags{Quiet: true}
-	r := newResolver(cfg, flags, stdout, io.Discard, strings.NewReader(""))
-	r.indexSrc = newProductionIndexSource(flags, stdout, io.Discard) // drive the real mechanism, overriding the offline default
+	r := newResolver(cfg, flags, io.Discard, stderr, strings.NewReader(""))
+	r.indexSrc = newProductionIndexSource(flags, stderr) // drive the real mechanism, overriding the offline default
 
 	_, _, _ = r.ensureIndex()
 
-	if strings.Contains(stdout.String(), "Fetching registry index") {
-		t.Errorf("Quiet mode should suppress 'Fetching registry index...' message, got:\n%s", stdout.String())
+	if strings.Contains(stderr.String(), "Fetching registry index") {
+		t.Errorf("Quiet mode should suppress 'Fetching registry index...' message, got:\n%s", stderr.String())
 	}
 }
 
@@ -1987,15 +1987,15 @@ func TestEnsureIndex_MismatchedModuleShowsFetchMessage(t *testing.T) {
 		t.Fatalf("loading config: %v", err)
 	}
 
-	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
 	flags := &Flags{}
-	r := newResolver(cfg, flags, stdout, io.Discard, strings.NewReader(""))
-	r.indexSrc = newProductionIndexSource(flags, stdout, io.Discard) // drive the real mechanism, overriding the offline default
+	r := newResolver(cfg, flags, io.Discard, stderr, strings.NewReader(""))
+	r.indexSrc = newProductionIndexSource(flags, stderr) // drive the real mechanism, overriding the offline default
 
 	_, _, _ = r.ensureIndex()
 
-	if !strings.Contains(stdout.String(), "Fetching registry index") {
-		t.Errorf("mismatched module cache should show 'Fetching registry index...' message, got:\n%s", stdout.String())
+	if !strings.Contains(stderr.String(), "Fetching registry index") {
+		t.Errorf("mismatched module cache should show 'Fetching registry index...' message, got:\n%s", stderr.String())
 	}
 }
 
@@ -2025,10 +2025,10 @@ func TestEnsureIndex_FreshCacheNotRewritten(t *testing.T) {
 		t.Fatalf("loading config: %v", err)
 	}
 
-	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
 	flags := &Flags{}
-	r := newResolver(cfg, flags, stdout, io.Discard, strings.NewReader(""))
-	r.indexSrc = newProductionIndexSource(flags, stdout, io.Discard) // drive the real mechanism, overriding the offline default
+	r := newResolver(cfg, flags, io.Discard, stderr, strings.NewReader(""))
+	r.indexSrc = newProductionIndexSource(flags, stderr) // drive the real mechanism, overriding the offline default
 
 	_, _, _ = r.ensureIndex()
 

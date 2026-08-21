@@ -392,6 +392,22 @@ func TestUpdateSkillQuerySelection(t *testing.T) {
 		t.Errorf("skills:name must not select every skill: %v", res)
 	}
 
+	res = updateJSON(t, run, "update", "skills:workflows", "--json")
+	if !hasSkillUpdate(res, "workflows/one-by-one") {
+		t.Errorf("unique prefix missing: %v", res)
+	}
+	if hasSkillUpdate(res, "review/pre-commit") {
+		t.Errorf("unique prefix must not select the other skill: %v", res)
+	}
+
+	res = updateJSON(t, run, "update", "skills:one-by-one", "--json")
+	if !hasSkillUpdate(res, "workflows/one-by-one") {
+		t.Errorf("unique dest leaf missing: %v", res)
+	}
+	if hasSkillUpdate(res, "review/pre-commit") {
+		t.Errorf("unique dest leaf must not select the other skill: %v", res)
+	}
+
 	res = updateJSON(t, run, "update", "one-by-one", "--json")
 	if !hasSkillUpdate(res, "workflows/one-by-one") {
 		t.Errorf("bare substring should match: %v", res)
@@ -415,6 +431,14 @@ func TestUpdateSkillAddressNotFoundAndAmbiguous(t *testing.T) {
 	_, _, err = run("update", "skills:one-by-one")
 	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
 		t.Fatalf("want ambiguous leaf, got %v", err)
+	}
+
+	if err := skills.Upsert(cfg, "workflows/other", "github.com/p3bot/library/skills/workflows/other@v1.0.0", "v1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = run("update", "skills:workflows")
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("want ambiguous prefix, got %v", err)
 	}
 }
 

@@ -2,14 +2,17 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"cuelang.org/go/cue"
 	"github.com/p3bot/start/internal/config"
 	internalcue "github.com/p3bot/start/internal/cue"
+	"github.com/p3bot/start/internal/fault"
 	"github.com/p3bot/start/internal/modules"
 	"github.com/p3bot/start/internal/registry"
 	"github.com/p3bot/start/internal/skills"
@@ -46,7 +49,7 @@ Without arguments, updates all installed modules including skills.
 With a query, updates only matching modules.
 
 The whole query skill or skills selects every installed skill.
-A skills:<name> address selects that inventory key (not every skill).
+A skills:<name> address selects by exact inventory key, then prefix, then dest leaf (not every skill).
 
 Use --dry-run to preview what would be updated without applying changes.
 Use --force to re-fetch and update modules even when already at the latest version.`,
@@ -279,23 +282,56 @@ func selectUpdateTargets(cmd *cobra.Command, query string, installed, skillMods 
 	return filtered, nil
 }
 
-func selectSkillsByAddress(cmd *cobra.Command, remainder string, skillMods []InstalledModule) ([]InstalledModule, error) {
-	entries := make(map[string]skills.Entry, len(skillMods))
-	for _, m := range skillMods {
-		entries[m.Name] = skills.Entry{}
-	}
-	keys := skills.ResolveKey(entries, remainder)
-	switch len(keys) {
-	case 0:
-		return nil, notFoundError(fmt.Errorf("skill %q not found", remainder))
-	case 1:
-		return skillModsNamed(skillMods, keys[0]), nil
-	}
+// skillAddressSource is the installed-only matchSource for a skills: update
+// address. Unique inventory keys feed the engine's exact→prefix reduction;
+// dest-leaf fallback runs only after a confirmed miss, same as uninstall.
+type skillAddressSource struct {
+	names []string
+}
 
-	matches := make([]ModuleMatch, len(keys))
-	for i, k := range keys {
-		matches[i] = ModuleMatch{Name: k, Category: "skills", Source: ModuleSourceInstalled}
+func (s skillAddressSource) exactCandidates(name string, _ []describeCategory, _ resolveScope) []ModuleMatch {
+	return s.candidates(name, modeExact)
+}
+
+func (s skillAddressSource) fallbackCandidates(name string, _ []describeCategory, mode matchMode, _ resolveScope) []ModuleMatch {
+	return s.candidates(name, mode)
+}
+
+func (s skillAddressSource) finalize(m ModuleMatch) (ModuleMatch, error) { return m, nil }
+
+func (s skillAddressSource) unreachableErr() error { return nil }
+
+func (s skillAddressSource) candidates(name string, mode matchMode) []ModuleMatch {
+	var out []ModuleMatch
+	for _, n := range s.names {
+		if nameMatches(name, n, mode) {
+			out = append(out, ModuleMatch{Name: n, Category: "skills", Source: ModuleSourceInstalled})
+		}
 	}
+	return out
+}
+
+func uniqueSkillNames(skillMods []InstalledModule) []string {
+	seen := make(map[string]string, len(skillMods))
+	for _, m := range skillMods {
+		k := strings.ToLower(m.Name)
+		if _, ok := seen[k]; !ok {
+			seen[k] = m.Name
+		}
+	}
+	names := make([]string, 0, len(seen))
+	for _, n := range seen {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func selectSkillsByAddress(cmd *cobra.Command, remainder string, skillMods []InstalledModule) ([]InstalledModule, error) {
+	if remainder == "" {
+		return nil, notFoundError(fmt.Errorf("skill %q not found", remainder))
+	}
+	names := uniqueSkillNames(skillMods)
 	sel := &selector{
 		stdin:  cmd.InOrStdin(),
 		stdout: cmd.OutOrStdout(),
@@ -307,11 +343,27 @@ func selectSkillsByAddress(cmd *cobra.Command, remainder string, skillMods []Ins
 		crossCategory: true,
 		displayType:   "skill",
 	}
-	picked, err := sel.selectMatch(matches, scope, remainder)
+	outcome, err := sel.match(skillAddressSource{names: names}, remainder, scope.categories, modePrefix, scope, 0)
+	if err == nil {
+		return skillModsNamed(skillMods, outcome.match.Name), nil
+	}
+	if !errors.Is(err, fault.ErrNotFound) {
+		return nil, err
+	}
+	return selectSkillsByLeaf(sel, scope, remainder, names, skillMods)
+}
+
+func selectSkillsByLeaf(sel *selector, scope resolveScope, remainder string, names []string, skillMods []InstalledModule) ([]InstalledModule, error) {
+	entries := make(map[string]skills.Entry, len(names))
+	for _, n := range names {
+		entries[n] = skills.Entry{}
+	}
+	// Nil index: update is installed-only, same as uninstall's matchSkillUninstall.
+	m, err := matchSkillLeaf(sel, entries, nil, formatAddress("skills", remainder), scope)
 	if err != nil {
 		return nil, err
 	}
-	return skillModsNamed(skillMods, picked.Name), nil
+	return skillModsNamed(skillMods, m.Name), nil
 }
 
 func skillModsNamed(skillMods []InstalledModule, name string) []InstalledModule {

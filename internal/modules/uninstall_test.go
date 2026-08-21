@@ -60,9 +60,34 @@ func TestRemoveModuleFromConfig_DropsEmptiedCategory(t *testing.T) {
 		t.Fatalf("RemoveModuleFromConfig() error: %v", err)
 	}
 
-	result, _ := os.ReadFile(configPath)
-	if strings.Contains(string(result), "tasks") {
-		t.Errorf("emptied tasks category should be dropped:\n%s", result)
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		t.Fatalf("emptied config file should be removed, stat: %v", err)
+	}
+}
+
+func TestRemoveModuleFromConfig_DeletesHeaderOnlyFile(t *testing.T) {
+	t.Parallel()
+	configPath := filepath.Join(t.TempDir(), "skills.cue")
+	content := `// start configuration
+// Managed by 'start install'
+skills: {
+	"finding/one-by-one": {
+		origin:  "github.com/p3bot/library/skills/finding/one-by-one@v1.2.0"
+		version: "v1.2.0"
+	}
+}
+`
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RemoveModuleFromConfig(configPath, "skills", "finding/one-by-one"); err != nil {
+		t.Fatalf("RemoveModuleFromConfig() error: %v", err)
+	}
+
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		data, _ := os.ReadFile(configPath)
+		t.Fatalf("header-only skills.cue should be removed, left %q", data)
 	}
 }
 

@@ -167,11 +167,12 @@ func TestInstallDryRunNotFoundHasNoHeader(t *testing.T) {
 }
 
 func TestUninstallSkillDryRunDoesNotRemove(t *testing.T) {
-	home, _, run := setupSkillCmd(t, []string{"agy"})
+	home, _, run := setupSkillCmd(t, []string{"claude-code", "agy"})
 	if _, _, err := run("install", "skills:workflows/one-by-one"); err != nil {
 		t.Fatal(err)
 	}
 	dest := filepath.Join(home, ".agents", "skills", "one-by-one")
+	absent := filepath.Join(home, ".claude", "skills", "one-by-one")
 	configDir := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "start")
 
 	stdout, _, err := run("uninstall", "--dry-run", "skills:workflows/one-by-one")
@@ -186,6 +187,9 @@ func TestUninstallSkillDryRunDoesNotRemove(t *testing.T) {
 	}
 	if !strings.Contains(stdout, dest) {
 		t.Errorf("want dest %s in preview, got:\n%s", dest, stdout)
+	}
+	if strings.Contains(stdout, absent) {
+		t.Errorf("preview must not list dest that does not exist:\n%s", stdout)
 	}
 	assertSkillDest(t, dest)
 	assertInventory(t, configDir, "workflows/one-by-one")
@@ -256,11 +260,14 @@ func TestInstallSkillRejectsLibraryAgentName(t *testing.T) {
 		t.Errorf("exit code = %d, want %d", got, ExitUsage)
 	}
 	addr := "skills:workflows/one-by-one"
-	if strings.Count(stdout, addr) != 1 {
-		t.Errorf("address should appear once on stdout, got:\n%s", stdout)
+	if strings.Contains(stdout, addr) {
+		t.Errorf("address must not appear on stdout, got:\n%s", stdout)
 	}
-	if !strings.Contains(stdout, "Error installing "+addr+":") {
-		t.Errorf("want Error installing line, got:\n%s", stdout)
+	if strings.Count(stderr, addr) != 1 {
+		t.Errorf("address should appear once on stderr, got:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "Error installing "+addr+":") {
+		t.Errorf("want Error installing line on stderr, got:\n%s", stderr)
 	}
 	if strings.Contains(stderr, "Error:") || strings.Contains(err.Error(), addr+": "+addr) {
 		t.Errorf("address wrapped twice: err=%v stderr=%s", err, stderr)
@@ -410,12 +417,16 @@ func TestUninstallSkillByAddressAndLeaf(t *testing.T) {
 	if _, err := os.Stat(dest); !os.IsNotExist(err) {
 		t.Fatal("dest should be removed")
 	}
-	entries, err := skills.Load(filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "start"))
+	invPath := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "start")
+	entries, err := skills.Load(invPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := entries["workflows/one-by-one"]; ok {
 		t.Fatal("inventory entry should be gone")
+	}
+	if _, err := os.Stat(skills.InventoryPath(invPath)); !os.IsNotExist(err) {
+		t.Fatal("emptied skills.cue should be removed")
 	}
 
 	home2, _, run2 := setupSkillCmd(t, []string{"agy"})
