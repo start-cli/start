@@ -106,27 +106,7 @@ func loadRemovalConfig(local bool) (cue.Value, string, error) {
 // returns not-found. Exact group/name and a unique bare leaf already resolve
 // through matchInstalled.
 func matchSkillUninstall(sel *selector, cfg cue.Value, input string, scope resolveScope) (ModuleMatch, error) {
-	addr, err := parseAddress(input)
-	if err != nil {
-		return ModuleMatch{}, err
-	}
-	if !addr.HasPrefix || addr.Category != "skills" {
-		return ModuleMatch{}, notFoundError(fmt.Errorf("module %q not found", input))
-	}
-	entries := inventoryFromValue(cfg)
-	keys := skills.ResolveKey(entries, addr.Name)
-	switch len(keys) {
-	case 0:
-		return ModuleMatch{}, notFoundError(fmt.Errorf("skill %q not found", addr.Name))
-	case 1:
-		return ModuleMatch{Name: keys[0], Category: "skills", Source: ModuleSourceInstalled}, nil
-	default:
-		matches := make([]ModuleMatch, len(keys))
-		for i, k := range keys {
-			matches[i] = ModuleMatch{Name: k, Category: "skills", Source: ModuleSourceInstalled}
-		}
-		return sel.selectMatch(matches, scope, addr.Name)
-	}
+	return matchSkillLeaf(sel, inventoryFromValue(cfg), nil, input, scope)
 }
 
 func inventoryFromValue(cfg cue.Value) map[string]skills.Entry {
@@ -227,6 +207,14 @@ func runRemoval(cmd *cobra.Command, queries []string, local, force bool) error {
 		return errors.Join(errs...)
 	}
 
+	if flags.DryRun {
+		if !flags.Quiet {
+			fmt.Fprintln(stdout, "\nDry run - no changes applied:")
+		}
+		errs = append(errs, removeResolvedItems(cmd, stdout, stderr, items, local, flags.Quiet, defaultAgent, true)...)
+		return errors.Join(errs...)
+	}
+
 	if !force {
 		if !isTerminal(stdin) {
 			return usageError(fmt.Errorf("--force flag required in non-interactive mode"))
@@ -240,7 +228,7 @@ func runRemoval(cmd *cobra.Command, queries []string, local, force bool) error {
 		}
 	}
 
-	errs = append(errs, removeResolvedItems(cmd, stdout, stderr, items, local, flags.Quiet, defaultAgent)...)
+	errs = append(errs, removeResolvedItems(cmd, stdout, stderr, items, local, flags.Quiet, defaultAgent, false)...)
 	return errors.Join(errs...)
 }
 
@@ -251,12 +239,19 @@ func runRemoval(cmd *cobra.Command, queries []string, local, force bool) error {
 // Both start uninstall / start config remove (via runRemoval) and the no-arg
 // interactive config-remove path share this loop so they warn and report
 // identically.
-func removeResolvedItems(cmd *cobra.Command, stdout, stderr io.Writer, items []configMatch, local, quiet bool, defaultAgent string) []error {
+func removeResolvedItems(cmd *cobra.Command, stdout, stderr io.Writer, items []configMatch, local, quiet bool, defaultAgent string, dryRun bool) []error {
 	var errs []error
 	for _, m := range items {
+		if dryRun {
+			if err := previewRemoval(cmd, stdout, m, local, quiet); err != nil {
+				fmt.Fprintf(stdout, "Error previewing %s %q: %v\n", m.Category, m.Name, err)
+				errs = append(errs, silenced(fmt.Errorf("previewing %s %q: %w", m.Category, m.Name, err)))
+			}
+			continue
+		}
 		if err := removeConfigItem(cmd, m, local); err != nil {
-			errs = append(errs, fmt.Errorf("removing %s %q: %w", m.Category, m.Name, err))
 			fmt.Fprintf(stdout, "Error removing %s %q: %v\n", m.Category, m.Name, err)
+			errs = append(errs, silenced(fmt.Errorf("removing %s %q: %w", m.Category, m.Name, err)))
 			continue
 		}
 		if m.Category == "agent" && m.Name == defaultAgent {
@@ -267,6 +262,25 @@ func removeResolvedItems(cmd *cobra.Command, stdout, stderr io.Writer, items []c
 		}
 	}
 	return errs
+}
+
+func previewRemoval(cmd *cobra.Command, stdout io.Writer, m configMatch, local, quiet bool) error {
+	if quiet {
+		return nil
+	}
+	fmt.Fprintf(stdout, "Would remove %s %q\n", m.Category, m.Name)
+	if m.Category != "skill" {
+		return nil
+	}
+	dests, configDir, err := skillUninstallPlan(cmd, m.Name, local)
+	if err != nil {
+		return err
+	}
+	for _, dest := range dests {
+		fmt.Fprintf(stdout, "  %s\n", dest)
+	}
+	fmt.Fprintf(stdout, "Inventory: %s\n", skills.InventoryPath(configDir))
+	return nil
 }
 
 // removeConfigEntry deletes one module's config entry through the AST writer,

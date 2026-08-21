@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -124,6 +125,72 @@ func skillRunner(t *testing.T, stub *registryStub, catalogOpts []agentdex.Option
 	}
 }
 
+func TestInstallSkillDryRunDoesNotWrite(t *testing.T) {
+	home, stub, run := setupSkillCmd(t, []string{"agy"})
+	stub.SetFetch(skillModulePath, registry.FetchResult{}, fmt.Errorf("fetch should not run on dry-run"))
+
+	stdout, _, err := run("install", "--dry-run", "skills:workflows/one-by-one")
+	if err != nil {
+		t.Fatalf("dry-run install: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "Dry run - no changes applied") {
+		t.Errorf("want dry-run header, got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "Would install skills:workflows/one-by-one") {
+		t.Errorf("want would-install line, got:\n%s", stdout)
+	}
+	dest := filepath.Join(home, ".agents", "skills", "one-by-one")
+	if !strings.Contains(stdout, dest) {
+		t.Errorf("want dest %s in preview, got:\n%s", dest, stdout)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatal("dry-run must not materialise dest")
+	}
+	entries, err := skills.Load(filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "start"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := entries["workflows/one-by-one"]; ok {
+		t.Fatal("dry-run must not write inventory")
+	}
+}
+
+func TestInstallDryRunNotFoundHasNoHeader(t *testing.T) {
+	_, _, run := setupSkillCmd(t, []string{"agy"})
+	stdout, _, err := run("install", "--dry-run", "skills:does-not-exist")
+	if err == nil {
+		t.Fatal("expected not-found")
+	}
+	if strings.Contains(stdout, "Dry run - no changes applied") {
+		t.Errorf("failed dry-run must not claim a preview:\n%s", stdout)
+	}
+}
+
+func TestUninstallSkillDryRunDoesNotRemove(t *testing.T) {
+	home, _, run := setupSkillCmd(t, []string{"agy"})
+	if _, _, err := run("install", "skills:workflows/one-by-one"); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(home, ".agents", "skills", "one-by-one")
+	configDir := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "start")
+
+	stdout, _, err := run("uninstall", "--dry-run", "skills:workflows/one-by-one")
+	if err != nil {
+		t.Fatalf("dry-run uninstall without --force: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "Dry run - no changes applied") {
+		t.Errorf("want dry-run header, got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, `Would remove skill "workflows/one-by-one"`) {
+		t.Errorf("want would-remove line, got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, dest) {
+		t.Errorf("want dest %s in preview, got:\n%s", dest, stdout)
+	}
+	assertSkillDest(t, dest)
+	assertInventory(t, configDir, "workflows/one-by-one")
+}
+
 func TestInstallSkillPrefixedAndBare(t *testing.T) {
 	home, _, run := setupSkillCmd(t, []string{"claude-code", "agy"})
 
@@ -178,9 +245,25 @@ func TestLaunchRejectsMultipleAgents(t *testing.T) {
 
 func TestInstallSkillRejectsLibraryAgentName(t *testing.T) {
 	_, _, run := setupSkillCmd(t, []string{"claude-code"})
-	_, _, err := run("install", "skills:workflows/one-by-one", "--agent", "claude/interactive")
+	stdout, stderr, err := run("install", "skills:workflows/one-by-one", "--agent", "claude/interactive")
 	if err == nil || !strings.Contains(err.Error(), "unknown agentdex id") {
 		t.Fatalf("want unknown agentdex id, got %v", err)
+	}
+	if !IsSilentError(err) {
+		t.Fatal("install already printed the fault; main.go must not reprint")
+	}
+	if got := ExitCodeFromError(err); got != ExitUsage {
+		t.Errorf("exit code = %d, want %d", got, ExitUsage)
+	}
+	addr := "skills:workflows/one-by-one"
+	if strings.Count(stdout, addr) != 1 {
+		t.Errorf("address should appear once on stdout, got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "Error installing "+addr+":") {
+		t.Errorf("want Error installing line, got:\n%s", stdout)
+	}
+	if strings.Contains(stderr, "Error:") || strings.Contains(err.Error(), addr+": "+addr) {
+		t.Errorf("address wrapped twice: err=%v stderr=%s", err, stderr)
 	}
 }
 
@@ -430,7 +513,7 @@ func TestGetSkillWithoutStartConfig(t *testing.T) {
 func TestGetSkillPrintsBodyWithoutInstall(t *testing.T) {
 	home, _, run := setupSkillCmd(t, []string{"agy"})
 
-	for _, query := range []string{"skills:workflows/one-by-one", "workflows/one-by-one"} {
+	for _, query := range []string{"skills:workflows/one-by-one", "workflows/one-by-one", "skills:one-by-one"} {
 		stdout, _, err := run("get", query)
 		if err != nil {
 			t.Fatalf("get %s: %v\n%s", query, err, stdout)
@@ -447,6 +530,37 @@ func TestGetSkillPrintsBodyWithoutInstall(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "one-by-one")); !os.IsNotExist(err) {
 		t.Fatal("get must not create dest dirs")
+	}
+}
+
+func TestGetSkillLeafUsesInventoryOriginWithoutIndexRow(t *testing.T) {
+	_, stub, run := setupSkillCmd(t, []string{"agy"})
+	if _, _, err := run("install", "skills:workflows/one-by-one"); err != nil {
+		t.Fatal(err)
+	}
+	delete(stub.idx.Skills, "workflows/one-by-one")
+
+	stdout, _, err := run("get", "skills:one-by-one")
+	if err != nil {
+		t.Fatalf("dest-leaf get without index row: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "Walk findings one by one.") {
+		t.Errorf("missing SKILL.md body:\n%s", stdout)
+	}
+}
+
+func TestGetSkillAmbiguousLeaf(t *testing.T) {
+	_, _, run := setupSkillCmd(t, []string{"agy"})
+	if _, _, err := run("install", "skills:workflows/one-by-one"); err != nil {
+		t.Fatal(err)
+	}
+	configDir := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "start")
+	if err := skills.Upsert(configDir, "other/one-by-one", "github.com/example/other@v1", "v1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := run("get", "skills:one-by-one")
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("want ambiguous leaf, got %v", err)
 	}
 }
 
@@ -470,7 +584,7 @@ func TestDescribeSkillWithoutDetectedAgents(t *testing.T) {
 func TestDescribeSkillMetadataFilesAndTargets(t *testing.T) {
 	home, _, run := setupSkillCmd(t, []string{"agy"})
 
-	for _, query := range []string{"skills:workflows/one-by-one", "workflows/one-by-one"} {
+	for _, query := range []string{"skills:workflows/one-by-one", "workflows/one-by-one", "skills:one-by-one"} {
 		stdout, _, err := run("describe", query)
 		if err != nil {
 			t.Fatalf("describe %s: %v\n%s", query, err, stdout)

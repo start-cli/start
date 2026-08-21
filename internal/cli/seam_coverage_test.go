@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -535,6 +536,28 @@ func TestInstallOffline(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "@"+stubVersion) {
 		t.Errorf("installed config missing resolved version %s:\n%s", stubVersion, data)
+	}
+}
+
+// TestInstallOfflineDryRunDoesNotWrite asserts --dry-run resolves and reports
+// without writing the module into config.
+func TestInstallOfflineDryRunDoesNotWrite(t *testing.T) {
+	tmpDir, stub := setupStartTestConfigWithRegistry(t, stubLibraryIndex())
+	stub.SetFetch(sentinelModuleBase, registry.FetchResult{}, fmt.Errorf("fetch should not run on dry-run"))
+
+	out, err := captureText(t, stub, "install", sentinelAgentName, "--local", "--dry-run")
+	if err != nil {
+		t.Fatalf("install --dry-run: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "Dry run - no changes applied") {
+		t.Errorf("want dry-run header, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Would install") {
+		t.Errorf("want would-install line, got:\n%s", out)
+	}
+	cfgPath := filepath.Join(tmpDir, ".start", "agents.cue")
+	if _, err := os.ReadFile(cfgPath); !os.IsNotExist(err) {
+		t.Fatalf("dry-run must not write agents.cue: %v", err)
 	}
 }
 

@@ -22,7 +22,8 @@ Multiple queries can be provided to remove several modules at once.
 By default, removes from global config (~/.config/start/).
 Use --local to remove from project config (./.start/).
 
-A confirmation prompt is shown before removal; use --force to skip it.`,
+A confirmation prompt is shown before removal; use --force to skip it.
+Use --dry-run to preview without writing; --force is not required.`,
 		Args: cobra.MinimumNArgs(0),
 		RunE: runUninstall,
 	}

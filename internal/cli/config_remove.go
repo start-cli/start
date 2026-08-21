@@ -23,7 +23,8 @@ A named query resolves against installed modules across all library categories
 presented. With no argument, prompts interactively for a config-merge category
 (agent, role, context, or task) and item.
 
-Use --force to skip the confirmation prompt.`,
+Use --force to skip the confirmation prompt.
+Use --dry-run to preview without writing; --force is not required.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: runConfigRemove,
 	}
@@ -38,20 +39,20 @@ func runConfigRemove(cmd *cobra.Command, args []string) error {
 
 	stdin := cmd.InOrStdin()
 	stdout := cmd.OutOrStdout()
-	local := getFlags(cmd).Local
+	flags := getFlags(cmd)
 	force, _ := cmd.Flags().GetBool("force")
 
 	if len(args) == 0 {
 		if !isTerminal(stdin) {
 			return usageError(fmt.Errorf("interactive remove requires a terminal"))
 		}
-		return runConfigRemoveInteractive(stdin, stdout, cmd.ErrOrStderr(), local, force, getFlags(cmd).Quiet)
+		return runConfigRemoveInteractive(stdin, stdout, cmd.ErrOrStderr(), flags.Local, force, flags.Quiet, flags.DryRun)
 	}
 
-	return runRemoval(cmd, args, local, force)
+	return runRemoval(cmd, args, flags.Local, force)
 }
 
-func runConfigRemoveInteractive(stdin io.Reader, stdout, stderr io.Writer, local bool, skipConfirm bool, quiet bool) error {
+func runConfigRemoveInteractive(stdin io.Reader, stdout, stderr io.Writer, local bool, skipConfirm bool, quiet bool, dryRun bool) error {
 	_, defaultAgent, err := loadRemovalConfig(local)
 	if err != nil {
 		return err
@@ -85,6 +86,13 @@ func runConfigRemoveInteractive(stdin io.Reader, stdout, stderr io.Writer, local
 		toRemove = append(toRemove, configMatch{Name: name, Category: singular})
 	}
 
+	if dryRun {
+		if !quiet {
+			fmt.Fprintln(stdout, "\nDry run - no changes applied:")
+		}
+		return errors.Join(removeResolvedItems(nil, stdout, stderr, toRemove, local, quiet, defaultAgent, true)...)
+	}
+
 	if !skipConfirm {
 		confirmed, err := confirmConfigRemoval(stdout, stdin, toRemove, local)
 		if err != nil {
@@ -95,7 +103,7 @@ func runConfigRemoveInteractive(stdin io.Reader, stdout, stderr io.Writer, local
 		}
 	}
 
-	return errors.Join(removeResolvedItems(nil, stdout, stderr, toRemove, local, quiet, defaultAgent)...)
+	return errors.Join(removeResolvedItems(nil, stdout, stderr, toRemove, local, quiet, defaultAgent, false)...)
 }
 
 // Returns false (without error) when the user declines.

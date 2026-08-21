@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,6 +94,49 @@ func readFileString(t *testing.T, path string) string {
 		return ""
 	}
 	return string(data)
+}
+
+func TestUninstall_DryRunDoesNotRemove(t *testing.T) {
+	globalDir := seedGlobalConfig(t)
+
+	stdout, _, err := runUninstallCmd(t, "uninstall", "gpt", "--dry-run")
+	if err != nil {
+		t.Fatalf("dry-run uninstall without --force: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "Dry run - no changes applied") {
+		t.Errorf("want dry-run header, got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, `Would remove agent "gpt"`) {
+		t.Errorf("want would-remove line, got:\n%s", stdout)
+	}
+	if !strings.Contains(readFileString(t, filepath.Join(globalDir, "agents.cue")), "gpt") {
+		t.Error("dry-run must leave gpt installed")
+	}
+}
+
+func TestConfigRemoveInteractive_DryRunDoesNotRemove(t *testing.T) {
+	globalDir := seedGlobalConfig(t)
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	// 1 = agents, 2 = gpt (sorted: claude, gpt). No confirm line: dry-run must
+	// skip it the way runRemoval does.
+	err := runConfigRemoveInteractive(slowStdin("1\n2\n"), stdout, stderr, false, false, false, true)
+	if err != nil {
+		t.Fatalf("interactive dry-run: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout.String(), "Dry run - no changes applied") {
+		t.Errorf("want dry-run header, got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout.String(), `Would remove agent "gpt"`) {
+		t.Errorf("want would-remove line, got:\n%s", stdout)
+	}
+	if strings.Contains(stdout.String(), "Remove agent") {
+		t.Errorf("dry-run must not ask to confirm a delete:\n%s", stdout)
+	}
+	if !strings.Contains(readFileString(t, filepath.Join(globalDir, "agents.cue")), "gpt") {
+		t.Error("dry-run must leave gpt installed")
+	}
 }
 
 func TestUninstall_GlobalRemovalPreservesSiblingsAndComments(t *testing.T) {
@@ -372,7 +416,7 @@ func TestRemoveResolvedItems_WarnsOnDefaultAgent(t *testing.T) {
 	stderr := &bytes.Buffer{}
 	items := []configMatch{{Name: "claude", Category: "agent"}}
 
-	errs := removeResolvedItems(nil, stdout, stderr, items, false, false, "claude")
+	errs := removeResolvedItems(nil, stdout, stderr, items, false, false, "claude", false)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -396,11 +440,34 @@ func TestRemoveResolvedItems_NonDefaultNoWarning(t *testing.T) {
 	stderr := &bytes.Buffer{}
 	items := []configMatch{{Name: "gpt", Category: "agent"}}
 
-	if errs := removeResolvedItems(nil, stdout, stderr, items, false, false, "claude"); len(errs) != 0 {
+	if errs := removeResolvedItems(nil, stdout, stderr, items, false, false, "claude", false); len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
 	if strings.Contains(stderr.String(), "default_agent") {
 		t.Errorf("removing a non-default agent must not warn, got: %q", stderr.String())
+	}
+}
+
+func TestRemoveResolvedItems_FailedItemIsSilent(t *testing.T) {
+	seedGlobalConfig(t)
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	items := []configMatch{{Name: "x", Category: "nope"}}
+
+	errs := removeResolvedItems(nil, stdout, stderr, items, false, false, "", false)
+	if len(errs) != 1 {
+		t.Fatalf("errs = %v, want 1", errs)
+	}
+	joined := errors.Join(errs...)
+	if !IsSilentError(joined) {
+		t.Fatal("removal already printed the fault; main.go must not reprint")
+	}
+	if !strings.Contains(stdout.String(), `Error removing nope "x"`) {
+		t.Errorf("want Error removing line, got:\n%s", stdout)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("stderr must stay empty, got: %q", stderr)
 	}
 }
 

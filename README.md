@@ -20,7 +20,8 @@ Every time you open an AI coding session you provide the same background: what t
 - **Automatic context injection** - Project files, environment info, and documentation included without manual setup
 - **Multi-agent support** - Works with Claude, Gemini, aichat, aider, opencode, or any AI CLI tool
 - **CUE-powered configuration** - Type-safe, validated, order-preserving config with built-in schema enforcement
-- **Registry packages** - Install curated roles, contexts, and tasks from the CUE Central Registry
+- **Skills** - Install library skills into detected agent dests (`finding/one-by-one`)
+- **Registry packages** - Install curated roles, contexts, tasks, and skills from the CUE Central Registry
 
 **Perfect for:**
 
@@ -51,6 +52,12 @@ start task git-diff "Only focus on the documentation changes."
 
 # Send a one-off prompt (minimal context, focused output)
 start prompt "Explain this error message: 404 Not Found"
+
+# Install a skill into detected agent dests
+start install skills:finding/one-by-one
+
+# Print a skill's SKILL.md without installing
+start get skills:finding/one-by-one
 ```
 
 ## Installation
@@ -260,7 +267,9 @@ start task review/duplication --dry-run
 start prompt "My question" --dry-run
 ```
 
-Dry run writes the composed inputs to `/tmp/start-<timestamp>/` for post-run inspection:
+`start install --dry-run` and `start uninstall --dry-run` resolve and report without writing. `start update --dry-run` previews upgrades.
+
+For launch, task, and prompt, dry run writes the composed inputs to `/tmp/start-<timestamp>/` for post-run inspection:
 
 ```
 /tmp/start-<timestamp>/
@@ -296,6 +305,7 @@ start describe <name>
 # Output a module's resolved content to stdout (pipe-clean)
 start get <name>
 start get contexts:cwd/agents-md
+start get skills:finding/one-by-one
 ```
 
 ### Modules Management
@@ -310,6 +320,7 @@ start describe golang/assistant
 # Install a package
 start install golang/teacher
 start install review/git-diff
+start install skills:finding/one-by-one
 
 # Remove installed modules (aliases: remove, rm)
 start uninstall golang/teacher
@@ -429,7 +440,7 @@ start completion fish
 | `--role`     | `-r`  | Override role (config name or file path)                |
 | `--model`    | `-m`  | Override model selection                                |
 | `--context`  | `-c`  | Select contexts (tags or file paths, repeatable)        |
-| `--dry-run`  |       | Preview execution without launching                     |
+| `--dry-run`  |       | Preview without launching or writing                    |
 | `--local`    | `-l`  | Use project-local config (`./.start/`)                  |
 | `--quiet`    | `-q`  | Suppress output                                         |
 | `--verbose`  |       | Detailed output                                         |

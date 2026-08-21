@@ -34,6 +34,8 @@ start describe
 start describe go-expert
 start describe --global
 start describe --local
+start get skills:finding/one-by-one
+start describe skills:finding/one-by-one
 start config
 start config list
 start config list agent
@@ -47,7 +49,9 @@ start config settings timeout 120
 start search golang
 start search --tag review
 start install golang/code-review
+start install skills:finding/one-by-one
 start uninstall golang/code-review
+start uninstall skills:finding/one-by-one --force
 start uninstall claude --force
 start uninstall agents:claude --local
 start list

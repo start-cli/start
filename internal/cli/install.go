@@ -46,7 +46,8 @@ config file.
 Multiple queries can be provided to install several modules at once.
 
 By default, installs to global config (~/.config/start/).
-Use --local to install to project config (./.start/).`,
+Use --local to install to project config (./.start/).
+Use --dry-run to preview without writing.`,
 		Args: cobra.MinimumNArgs(0),
 		RunE: runInstall,
 	}
@@ -135,12 +136,17 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	var dryRunNoted bool
 	var errs []error
 	for _, query := range args {
-		if err := installModule(ctx, cmd, prog, client, index, query, configDir, scopeName, flags, cfg); err != nil {
+		if err := installModule(ctx, cmd, prog, client, index, query, configDir, scopeName, flags, cfg, &dryRunNoted); err != nil {
 			if prompted && len(args) == 1 && errors.Is(err, errNoModules) {
 				fmt.Fprintf(w, "No modules found matching %q\n", query)
 				return nil
+			}
+			if IsSilentError(err) {
+				errs = append(errs, err)
+				continue
 			}
 			errs = append(errs, fmt.Errorf("%s: %w", query, err))
 			if len(args) > 1 {
@@ -153,7 +159,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 }
 
 // installModule searches for, selects, and installs a single module.
-func installModule(ctx context.Context, cmd *cobra.Command, prog *tui.Progress, client registry.Client, index *registry.Index, query, configDir, scopeName string, flags *Flags, cfg cue.Value) error {
+func installModule(ctx context.Context, cmd *cobra.Command, prog *tui.Progress, client registry.Client, index *registry.Index, query, configDir, scopeName string, flags *Flags, cfg cue.Value, dryRunNoted *bool) error {
 	w := cmd.OutOrStdout()
 
 	// Install enumerates registry candidates through the shared primitive and
@@ -185,22 +191,32 @@ func installModule(ctx context.Context, cmd *cobra.Command, prog *tui.Progress, 
 		}
 	}
 
+	noteInstallDryRun(w, flags, dryRunNoted)
+
 	var errs []error
 	for _, selected := range selections {
 		if selected.Category == "skills" {
 			if err := installSkill(ctx, w, cmd, client, selected, configDir, scopeName, flags); err != nil {
-				errs = append(errs, fmt.Errorf("%s: %w", formatAddress(selected.Category, selected.Name), err))
 				fmt.Fprintf(w, "Error installing %s: %v\n", formatAddress(selected.Category, selected.Name), err)
+				errs = append(errs, silenced(err))
 			}
 			continue
 		}
 		if err := installSingleModule(ctx, w, prog, client, index, selected, configDir, scopeName, flags, cfg); err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", formatAddress(selected.Category, selected.Name), err))
 			fmt.Fprintf(w, "Error installing %s: %v\n", formatAddress(selected.Category, selected.Name), err)
+			errs = append(errs, silenced(err))
 		}
 	}
 
 	return errors.Join(errs...)
+}
+
+func noteInstallDryRun(w io.Writer, flags *Flags, noted *bool) {
+	if flags == nil || !flags.DryRun || flags.Quiet || noted == nil || *noted {
+		return
+	}
+	fmt.Fprintln(w, "\nDry run - no changes applied:")
+	*noted = true
 }
 
 // installSingleModule checks and installs a single selected module.
@@ -249,6 +265,18 @@ func installSingleModule(ctx context.Context, w io.Writer, prog *tui.Progress, c
 		}
 	}
 
+	configFile, ok := internalcue.ConfigFiles[selected.Category]
+	if !ok {
+		configFile = internalcue.ConfigFiles[internalcue.KeySettings]
+	}
+
+	if flags.DryRun {
+		if !flags.Quiet {
+			printModuleInstall(w, selected, selected.Entry.Version, scopeName, configDir, configFile, true)
+		}
+		return nil
+	}
+
 	prog.Update("Fetching module...")
 	version, err := modules.InstallModule(ctx, client, index, selected, configDir)
 	if err != nil {
@@ -257,24 +285,24 @@ func installSingleModule(ctx context.Context, w io.Writer, prog *tui.Progress, c
 	prog.Done()
 
 	if !flags.Quiet {
-		configFile := map[string]string{
-			"agents":   "agents.cue",
-			"roles":    "roles.cue",
-			"tasks":    "tasks.cue",
-			"contexts": "contexts.cue",
-		}[selected.Category]
-		if configFile == "" {
-			configFile = "settings.cue"
-		}
-		if version != "" {
-			fmt.Fprintf(w, "\nInstalled %s@%s to %s config\n", formatAddress(selected.Category, selected.Name), version, scopeName)
-		} else {
-			fmt.Fprintf(w, "\nInstalled %s to %s config\n", formatAddress(selected.Category, selected.Name), scopeName)
-		}
-		fmt.Fprintf(w, "Config: %s/%s\n", configDir, configFile)
+		printModuleInstall(w, selected, version, scopeName, configDir, configFile, false)
 	}
 
 	return nil
+}
+
+func printModuleInstall(w io.Writer, selected modules.SearchResult, version, scopeName, configDir, configFile string, dryRun bool) {
+	verb := "Installed"
+	if dryRun {
+		verb = "Would install"
+	}
+	addr := formatAddress(selected.Category, selected.Name)
+	if version != "" {
+		fmt.Fprintf(w, "\n%s %s@%s to %s config\n", verb, addr, version, scopeName)
+	} else {
+		fmt.Fprintf(w, "\n%s %s to %s config\n", verb, addr, scopeName)
+	}
+	fmt.Fprintf(w, "Config: %s/%s\n", configDir, configFile)
 }
 
 // promptModuleSelection prompts to select one or more modules from multiple

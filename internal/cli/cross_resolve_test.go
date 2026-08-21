@@ -395,6 +395,63 @@ func TestResolveCross_Certainty(t *testing.T) {
 	})
 }
 
+func TestResolveCrossNoInstall_SkillLeaf(t *testing.T) {
+	t.Parallel()
+
+	entry := func(name string) registry.IndexEntry {
+		return registry.IndexEntry{Module: "github.com/test/skills/" + name + "@v0"}
+	}
+
+	t.Run("prefix miss then unique dest leaf", func(t *testing.T) {
+		r := newResolverWithIndex(buildTestCfg(t, `{}`), &registry.Index{
+			Skills: map[string]registry.IndexEntry{
+				"finding/one-by-one": entry("finding/one-by-one"),
+			},
+		})
+		outcome, err := r.resolveCrossNoInstall("skills:one-by-one")
+		if err != nil {
+			t.Fatalf("unique dest leaf: %v", err)
+		}
+		if outcome.match.Name != "finding/one-by-one" || outcome.match.Category != "skills" {
+			t.Errorf("match = %+v, want finding/one-by-one/skills", outcome.match)
+		}
+		if outcome.match.Entry.Module != "github.com/test/skills/finding/one-by-one@v0" {
+			t.Errorf("registry dest leaf dropped module path: %+v", outcome.match.Entry)
+		}
+	})
+
+	t.Run("unique dest leaf does not hide prefix ambiguity", func(t *testing.T) {
+		r := newResolverWithIndex(buildTestCfg(t, `{}`), &registry.Index{
+			Skills: map[string]registry.IndexEntry{
+				"one-by-one-extra":   entry("one-by-one-extra"),
+				"one-by-one-helper":  entry("one-by-one-helper"),
+				"finding/one-by-one": entry("finding/one-by-one"),
+			},
+		})
+		_, err := r.resolveCrossNoInstall("skills:one-by-one")
+		if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+			t.Fatalf("want prefix ambiguity, got %v", err)
+		}
+	})
+
+	t.Run("installed dest leaf resolves when registry is down", func(t *testing.T) {
+		cfg := buildTestCfg(t, `{ skills: { "finding/one-by-one": { origin: "github.com/example/x@v1", version: "v1.0.0" } } }`)
+		r := newResolver(cfg, &Flags{}, io.Discard, io.Discard, strings.NewReader(""))
+		r.didFetch = true
+		r.indexErr = &registry.FetchError{Kind: registry.FetchTransient, Op: "fetch", Path: "x", Err: io.EOF}
+		outcome, err := r.resolveCrossNoInstall("skills:one-by-one")
+		if err != nil {
+			t.Fatalf("installed dest leaf must resolve offline, got: %v", err)
+		}
+		if outcome.match.Name != "finding/one-by-one" {
+			t.Errorf("match = %+v, want finding/one-by-one", outcome.match)
+		}
+		if outcome.match.Entry.Module != "github.com/example/x@v1" || outcome.match.Entry.Version != "v1.0.0" {
+			t.Errorf("installed dest leaf dropped origin: %+v", outcome.match.Entry)
+		}
+	})
+}
+
 func TestInstallIfRegistry_InstalledIsNoop(t *testing.T) {
 	t.Parallel()
 

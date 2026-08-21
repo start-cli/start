@@ -103,7 +103,7 @@ start alias import [file]         # Merge aliases from stdin or a file (--replac
 | `--role` | `-r` | Override role (config name, file path, or http(s) URL); `none` skips role assignment |
 | `--model` | `-m` | Override the model |
 | `--context` | `-c` | Select contexts (tags, file paths, or http(s) URLs, repeatable); `none` drops auto-loaded required/default contexts (`none,foo` keeps only foo) |
-| `--dry-run` | | Preview execution without running |
+| `--dry-run` | | Preview without launching or writing |
 | `--quiet` | `-q` | Suppress non-essential output |
 | `--verbose` | | Show detailed output |
 | `--debug` | | Debug output (implies --verbose) |
@@ -176,7 +176,10 @@ in `docs/module-resolution.md`, is:
    a case-insensitive literal substring, a category-qualified term a literal
    prefix. The query must be at least three characters (counting the name,
    excluding any `category:` prefix). Zero matches is not-found, one is used, and
-   more than one menus on a TTY or errors with the list otherwise.
+   more than one menus on a TTY or errors with the list otherwise. A `skills:`
+   prefix miss then matches the dest leaf (`skills:one-by-one` →
+   `finding/one-by-one`) on get/describe (inventory, then registry) and on
+   uninstall/update (inventory only).
 
 Matching is literal and case-insensitive over names only — no regex, no
 description/tag matching, no multi-term splitting. The registry index is fetched

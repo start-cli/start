@@ -139,7 +139,7 @@ Examples:
 	cmd.PersistentFlags().StringVarP(&flags.Role, "role", "r", "", "Override role (config name, file path, or http(s) URL); 'none' skips role assignment (also: nil, off, 0)")
 	cmd.PersistentFlags().StringVarP(&flags.Model, "model", "m", "", "Override model selection")
 	cmd.PersistentFlags().StringSliceVarP(&flags.Context, "context", "c", nil, "Select contexts (tags, file paths, or http(s) URLs); 'none' drops auto-loaded contexts (also: nil, off, 0)")
-	cmd.PersistentFlags().BoolVar(&flags.DryRun, "dry-run", false, "Preview execution without launching agent")
+	cmd.PersistentFlags().BoolVar(&flags.DryRun, "dry-run", false, "Preview without launching or writing")
 	cmd.PersistentFlags().BoolVarP(&flags.Quiet, "quiet", "q", false, "Suppress output")
 	cmd.PersistentFlags().BoolVar(&flags.Verbose, "verbose", false, "Detailed output")
 	cmd.PersistentFlags().BoolVar(&flags.Debug, "debug", false, "Debug output (implies --verbose)")

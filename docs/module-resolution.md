@@ -281,6 +281,13 @@ Prefix rules by surface:
 - Cross-category surfaces (`get`, `describe`): no prefix searches
   all library categories; a prefix narrows to the named category.
 
+A `skills:` query that misses as a prefix then tries the dest leaf: exact
+inventory key first, then keys whose last path segment equals the name
+(`skills:one-by-one` → `finding/one-by-one`). Installed keys are tried first;
+if none match, `get`/`describe` try the registry index. Zero is not-found, one
+is used, more than one menus or errors. `start uninstall` and `start update`
+use the same leaf rule over installed inventory only.
+
 Examples:
 
 - `tasks:jira` matches `jira/item/review` and `jira/item/backlog/review` (both

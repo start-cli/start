@@ -1,5 +1,12 @@
 package cli
 
+import (
+	"errors"
+
+	"github.com/p3bot/start/internal/fault"
+	"github.com/p3bot/start/internal/registry"
+)
+
 // resolveCross resolves a cross-category identifier (start get, start describe)
 // through the unified engine, spanning all library categories. The exact tier
 // consults both installed config and the registry across every scoped category,
@@ -26,9 +33,35 @@ func (r *resolver) resolveCross(query string) (resolveOutcome, error) {
 }
 
 // resolveCrossNoInstall is resolveCross without auto-install. Get and describe
-// use it so a skill match is never finalised through InstallModule.
+// use it so a skill match is never finalised through InstallModule. A skills:
+// prefix miss then matches the dest leaf (inventory, then registry).
 func (r *resolver) resolveCrossNoInstall(query string) (resolveOutcome, error) {
 	scope := crossCategoryScope()
 	r.wantLive = r.computeWantLive([]pendingSurface{{query, scope}})
-	return r.resolveNoInstall(query, scope)
+	outcome, err := r.resolveNoInstall(query, scope)
+	if err == nil {
+		return outcome, nil
+	}
+	addr, pErr := parseAddress(query)
+	if pErr != nil || !addr.HasPrefix || addr.Category != "skills" {
+		return outcome, err
+	}
+	// Dest leaf runs after a prefix miss, not after prefix ambiguity or usage.
+	// A down registry is not a miss: try installed inventory only so a unique
+	// installed leaf still resolves offline.
+	if !errors.Is(err, fault.ErrNotFound) && r.unreachableErr() == nil {
+		return outcome, err
+	}
+	var index *registry.Index
+	if errors.Is(err, fault.ErrNotFound) {
+		index, _, _ = r.ensureIndex()
+	}
+	m, lerr := matchSkillLeaf(r.selector(), inventoryFromValue(r.cfg.Value), index, query, scope)
+	if lerr == nil {
+		return resolveOutcome{match: m}, nil
+	}
+	if !errors.Is(lerr, fault.ErrNotFound) {
+		return resolveOutcome{}, lerr
+	}
+	return outcome, err
 }

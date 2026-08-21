@@ -29,6 +29,9 @@ func TestAgentsHelp_ContainsExpectedContent(t *testing.T) {
 		"start prompt",
 		"start doctor",
 		"start uninstall",
+		"start install skills:",
+		"start get skills:",
+		"start describe skills:",
 	} {
 		if !strings.Contains(agentsHelp, want) {
 			t.Errorf("agentsHelp missing: %s", want)
