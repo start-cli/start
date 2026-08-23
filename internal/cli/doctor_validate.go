@@ -97,13 +97,13 @@ func addDoctorValidateCommand(parent *cobra.Command) {
 		Use:     "validate",
 		Aliases: []string{"verify", "check"},
 		Short:   "Validate index and module version consistency",
-		Long: `Check that git tags, CUE registry published versions, and index version
-fields are consistent with each other.
+		Long: `Check that the version named in the library index is tagged in git,
+is the latest published on the CUE registry, and is matched by the working tree.
 
 Clones the modules repository to cache and checks each module for:
-  - Version drift between index, registry, and git tags
+  - Current index version consistency with git and the registry
   - Modules in the filesystem with no index entry
-  - Content changes since the last published tag
+  - Content changes since the named version's git tag
 
 Exit codes:
   0 - All checks passed
@@ -132,7 +132,7 @@ func runDoctorValidate(cmd *cobra.Command, args []string) error {
 	if !force {
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "The 'start doctor validate' command is a maintainer tool for checking")
-		fmt.Fprintln(w, "consistency between git tags, the CUE registry, and the modules index.")
+		fmt.Fprintln(w, "consistency of the current index version with git tags and the CUE registry.")
 		fmt.Fprintln(w, "It makes significant network requests against public infrastructure.")
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "Running it will:")
@@ -640,13 +640,6 @@ func validateOneModule(ctx context.Context, client registry.Client, idx *registr
 		latestPublished = publishedVersions[len(publishedVersions)-1]
 	}
 
-	// The registry only returns versions for the module's current major, so git
-	// tags from prior majors are not relevant to registry checks.
-	moduleMajor := ""
-	if idx := strings.LastIndex(entry.Module, "@"); idx >= 0 {
-		moduleMajor = entry.Module[idx+1:]
-	}
-
 	// Check 1: index version does not match latest published version
 	if entry.Version != "" && latestPublished != "" && entry.Version != latestPublished {
 		m.issues = append(m.issues, fmt.Sprintf("index version %s does not match latest published %s", entry.Version, latestPublished))
@@ -657,28 +650,18 @@ func validateOneModule(ctx context.Context, client registry.Client, idx *registr
 		m.issues = append(m.issues, fmt.Sprintf("published version %s has no git tag %s", latestPublished, tagPrefix+latestPublished))
 	}
 
-	// Check 3: git tags with no published version. Only tags matching the
-	// current major count; prior-major tags are expected to be absent.
-	for _, tv := range tagVersions {
-		if moduleMajor != "" && semver.Major(tv) != moduleMajor {
-			continue
-		}
-		if !publishedSet[tv] {
-			m.issues = append(m.issues, fmt.Sprintf("git tag %s%s was never published to registry", tagPrefix, tv))
-		}
+	// Extra tags are unpublished history or next work, not a named-version miss.
+	if entry.Version != "" && !publishedSet[entry.Version] {
+		m.issues = append(m.issues, fmt.Sprintf("index version %s is not published on the registry", entry.Version))
 	}
 
-	// Staleness: content changed since the latest tagged-and-published version.
-	latestTag := ""
-	if len(tagVersions) > 0 {
-		latestTag = tagVersions[len(tagVersions)-1]
-	}
-	if latestTag != "" && publishedSet[latestTag] {
-		stale, err := validateIsStale(cacheDir, tagPrefix+latestTag, category+"/"+name)
+	// Diff against the named tag; a newer unpublished tag is not the baseline.
+	if entry.Version != "" && tagVersionSet[entry.Version] && publishedSet[entry.Version] {
+		stale, err := validateIsStale(cacheDir, tagPrefix+entry.Version, category+"/"+name)
 		if err != nil {
 			m.issues = append(m.issues, fmt.Sprintf("staleness check failed: %v", err))
 		} else if stale {
-			m.issues = append(m.issues, fmt.Sprintf("content changed since %s%s — publish a new version", tagPrefix, latestTag))
+			m.issues = append(m.issues, fmt.Sprintf("content changed since %s%s — publish a new version", tagPrefix, entry.Version))
 		}
 	}
 

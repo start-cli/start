@@ -68,7 +68,7 @@ start alias set pc task review  # Save an alias (value is the command without 's
 start <alias>                   # Run a saved alias (e.g. 'start pc')
 start search <term>             # Search installed config and the module registry
 start doctor                    # Diagnose installation and configuration
-start doctor validate           # Maintainer check: index/registry/tag consistency + uses references
+start doctor validate           # Maintainer check: current index version vs git/registry + uses references
 start help schemas              # --json output shapes and exit-code reference
 start prompt                    # Compose and preview a prompt
 echo "summarise" | start        # Pipe text as a one-shot prompt (required contexts only)

@@ -89,6 +89,10 @@ func (s *registryStub) SetFetchIndexError(err error) {
 	s.fetchIndexErr = err
 }
 
+func (s *registryStub) SetVersions(path string, versions []string, err error) {
+	s.versions[stubBasePath(path)] = versionsResponse{versions: versions, err: err}
+}
+
 // FetchIndex returns the canned in-memory index. The returned version string
 // mirrors a canonical resolved path (what the real client produces).
 func (s *registryStub) FetchIndex(ctx context.Context, indexPath string) (*registry.Index, string, error) {
@@ -164,6 +168,11 @@ func TestRegistryStubOverrides(t *testing.T) {
 	vers, err := stub.ModuleVersions(ctx, "github.com/x/y@v1")
 	if err != nil || len(vers) != 1 || vers[0] != stubVersion {
 		t.Errorf("default ModuleVersions = %v err=%v, want [%s]", vers, err, stubVersion)
+	}
+	stub.SetVersions("github.com/x/y@v1", []string{"v1.2.0", "v1.3.0"}, nil)
+	vers, err = stub.ModuleVersions(ctx, "github.com/x/y@v2")
+	if err != nil || len(vers) != 2 || vers[0] != "v1.2.0" || vers[1] != "v1.3.0" {
+		t.Errorf("SetVersions override not honoured: %v err=%v", vers, err)
 	}
 }
 

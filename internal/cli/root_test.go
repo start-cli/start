@@ -106,7 +106,7 @@ func TestHelpArgLeafCommands(t *testing.T) {
 		{
 			name: "doctor validate help",
 			args: []string{"doctor", "validate", "help"},
-			want: "git tags",
+			want: "named in the library index",
 		},
 		{
 			name: "completion bash help",

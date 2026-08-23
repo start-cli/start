@@ -408,6 +408,147 @@ task: {
 	})
 }
 
+func TestValidateOneModule_CurrentIndexVersion(t *testing.T) {
+	t.Parallel()
+
+	const (
+		category = "skills"
+		name     = "example"
+		named    = "v1.2.0"
+	)
+	prefix := validateGitTagPrefix(category, name)
+
+	t.Run("older unpublished tag does not fail when named version is tagged and published", func(t *testing.T) {
+		t.Parallel()
+		dir := initValidateModuleRepo(t, category, name, "package skill\n")
+		mustGit(t, dir, "add", ".")
+		mustGit(t, dir, "commit", "-m", "initial")
+		mustGit(t, dir, "tag", prefix+"v1.0.0")
+		mustGit(t, dir, "tag", prefix+named)
+
+		got := runValidateOneModule(t, category, name, named, []string{named}, []string{
+			prefix + "v1.0.0",
+			prefix + named,
+		}, dir)
+		if got.status != validateModulePass {
+			t.Fatalf("status = %v issues = %v, want pass", got.status, got.issues)
+		}
+	})
+
+	t.Run("named version tagged but not published fails", func(t *testing.T) {
+		t.Parallel()
+		got := runValidateOneModule(t, category, name, named, nil, []string{prefix + named}, t.TempDir())
+		if got.status != validateModuleFail {
+			t.Fatal("expected fail when named version is not on the registry")
+		}
+		if !issuesContain(got.issues, "index version "+named+" is not published on the registry") {
+			t.Fatalf("issues = %v, want index version %s not published", got.issues, named)
+		}
+	})
+
+	t.Run("latest published version with no git tag still fails", func(t *testing.T) {
+		t.Parallel()
+		got := runValidateOneModule(t, category, name, named, []string{named}, nil, t.TempDir())
+		if got.status != validateModuleFail {
+			t.Fatal("expected fail when latest published version has no git tag")
+		}
+		if !issuesContain(got.issues, "has no git tag") {
+			t.Fatalf("issues = %v, want missing git tag for latest published", got.issues)
+		}
+	})
+
+	t.Run("newer unpublished tag is not a never-published fail when HEAD matches named tag", func(t *testing.T) {
+		t.Parallel()
+		dir := initValidateModuleRepo(t, category, name, "package skill\n")
+		mustGit(t, dir, "add", ".")
+		mustGit(t, dir, "commit", "-m", "initial")
+		mustGit(t, dir, "tag", prefix+named)
+		mustGit(t, dir, "tag", prefix+"v1.3.0")
+
+		got := runValidateOneModule(t, category, name, named, []string{named}, []string{
+			prefix + named,
+			prefix + "v1.3.0",
+		}, dir)
+		if issuesContain(got.issues, "never published") || issuesContain(got.issues, "is not published") {
+			t.Fatalf("issues = %v, newer unpublished tag must not fail as unpublished", got.issues)
+		}
+		if got.status != validateModulePass {
+			t.Fatalf("status = %v issues = %v, want pass when HEAD matches named tag", got.status, got.issues)
+		}
+	})
+
+	t.Run("newer unpublished tag with drifted HEAD fails content-changed against named tag", func(t *testing.T) {
+		t.Parallel()
+		dir := initValidateModuleRepo(t, category, name, "package skill\n")
+		mustGit(t, dir, "add", ".")
+		mustGit(t, dir, "commit", "-m", "initial")
+		mustGit(t, dir, "tag", prefix+named)
+
+		modFile := filepath.Join(dir, category, name, "skill.cue")
+		if err := os.WriteFile(modFile, []byte("package skill\n// drifted\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		mustGit(t, dir, "add", ".")
+		mustGit(t, dir, "commit", "-m", "drift")
+		mustGit(t, dir, "tag", prefix+"v1.3.0")
+
+		got := runValidateOneModule(t, category, name, named, []string{named}, []string{
+			prefix + named,
+			prefix + "v1.3.0",
+		}, dir)
+		if got.status != validateModuleFail {
+			t.Fatal("expected fail when HEAD drifted from the named tag")
+		}
+		if issuesContain(got.issues, "never published") || issuesContain(got.issues, "is not published") {
+			t.Fatalf("issues = %v, must not fail as unpublished", got.issues)
+		}
+		want := "content changed since " + prefix + named
+		if !issuesContain(got.issues, want) {
+			t.Fatalf("issues = %v, want %q", got.issues, want)
+		}
+	})
+}
+
+func initValidateModuleRepo(t *testing.T, category, name, body string) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not in PATH")
+	}
+	dir := t.TempDir()
+	mustGit(t, dir, "init", "-b", "main")
+	mustGit(t, dir, "config", "user.email", "test@test.com")
+	mustGit(t, dir, "config", "user.name", "Test")
+	modDir := filepath.Join(dir, category, name)
+	if err := os.MkdirAll(modDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modDir, "skill.cue"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func runValidateOneModule(t *testing.T, category, name, version string, published, tags []string, cacheDir string) validateModuleResult {
+	t.Helper()
+	module := "github.com/p3bot/library/" + category + "/" + name + "@v1"
+	entry := registry.IndexEntry{Module: module, Version: version}
+	idx := &registry.Index{
+		Skills: map[string]registry.IndexEntry{name: entry},
+	}
+	stub := newRegistryStub(idx, "")
+	stub.SetVersions(module, published, nil)
+	return validateOneModule(context.Background(), stub, idx, category, name, entry, tags, cacheDir)
+}
+
+func issuesContain(issues []string, substr string) bool {
+	for _, issue := range issues {
+		if strings.Contains(issue, substr) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestValidateOneModule_SkillsSkipUses(t *testing.T) {
 	t.Parallel()
 	cacheDir := t.TempDir()
