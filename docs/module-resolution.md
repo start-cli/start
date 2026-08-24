@@ -12,7 +12,7 @@ index for matches, apply one match rule, and act on the result.
 | `start task <id>` | positional argument | tasks |
 | `--role <id>` (`-r`) | flag value | roles |
 | `--context <id>` (`-c`) | flag value, repeatable | contexts |
-| `--agent <id>` (`-a`) | flag value | agents |
+| `--agent <id>` (`-a`) | flag value, or `settings.default_agent` when the flag is omitted | agents |
 | `start get <id>`, `start describe <id>` | positional argument | all library categories |
 | `start uninstall <id>` | positional argument, repeatable | all library categories |
 | `start config remove <id>` | positional argument, repeatable | all library categories |
@@ -332,9 +332,12 @@ listed forms are valid command arguments that round-trip back to the same entry.
   rule still holds (one term that matches several contexts menus or errors). The
   `default` and `none` sentinels are not searched. Required and default contexts
   load automatically and are not subject to term resolution.
-- Agents: the procedure runs only when `--agent` is supplied. Otherwise the
-  configured default agent is used without resolution. An agent identifier is
-  always a name; `--agent` does not accept a filesystem path.
+- Agents: the procedure runs when `--agent` is supplied or, if that flag is
+  omitted, when `settings.default_agent` is a non-empty name. `--agent` wins
+  over the default. An unset default falls through to the installed-only picker
+  (sole agent, TTY menu, or first agent on a non-TTY) and does not auto-install
+  from the registry. An agent identifier is always a name; `--agent` does not
+  accept a filesystem path.
 - Sentinels skip resolution entirely: `--role none` skips role assignment, just
   as the context `none` and `default` sentinels above are never searched.
 

@@ -92,12 +92,15 @@ func loadAgentsFromDir(dir string) (map[string]AgentConfig, []string, error) {
 }
 
 func getDefaultAgentFromConfig(cfg cue.Value) string {
-	val := cfg.LookupPath(cue.ParsePath("settings.default_agent"))
-	if val.Exists() {
-		s, _ := val.String()
-		return s
+	val := cfg.LookupPath(cue.ParsePath(internalcue.KeySettings + ".default_agent"))
+	if !val.Exists() {
+		return ""
 	}
-	return ""
+	s, err := val.String()
+	if err != nil {
+		return ""
+	}
+	return s
 }
 
 // RoleConfig represents a role configuration for editing.

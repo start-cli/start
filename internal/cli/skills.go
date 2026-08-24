@@ -402,14 +402,3 @@ func describeSkill(w io.Writer, cmd *cobra.Command, flags *Flags, client registr
 	}
 	return nil
 }
-
-func launchAgentName(flags *Flags) (string, error) {
-	switch len(flags.Agent) {
-	case 0:
-		return "", nil
-	case 1:
-		return flags.Agent[0], nil
-	default:
-		return "", usageError(fmt.Errorf("launch accepts at most one --agent"))
-	}
-}

@@ -239,12 +239,13 @@ registry, expressed by the shared `decideCachedIndex` primitive (cache read +
   is about to auto-install, so the whole invocation must see the latest index,
   like `start install`. An invocation whose every surface is satisfied by an
   installed module stays cache-gated. The decision (`computeWantLive`) is made
-  once, up front, as a union over the flag/arg-bound surfaces, interpreting each
-  identifier through the single `interpretSurface` function that `resolve()` also
-  uses, so a locator or `none`/`default`/empty sentinel surface (which bypasses
-  the index) never forces a spurious live resolve. The lone exception is the
-  late-bound task-declared role, whose name lives in the task content: it carries
-  a targeted late liveness check after the task resolves.
+  once, up front, as a union over the flag/arg-bound surfaces (and, when
+  `--agent` is omitted, `settings.default_agent`), interpreting each identifier
+  through the single `interpretSurface` function that `resolve()` also uses, so a
+  locator or `none`/`default`/empty sentinel surface (which bypasses the index)
+  never forces a spurious live resolve. The lone exception is the late-bound
+  task-declared role, whose name lives in the task content: it carries a targeted
+  late liveness check after the task resolves.
 - `start install`, `start update`, and `start doctor validate` already resolve
   live on every invocation and are unchanged. `start doctor` (non-validate) and
   first-run auto-setup are out of scope.

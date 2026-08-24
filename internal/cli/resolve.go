@@ -94,25 +94,22 @@ func newResolver(cfg internalcue.LoadResult, flags *Flags, stdout, stderr io.Wri
 	}
 }
 
-// pendingSurface is one flag- or arg-bound surface whose identifier is known
-// before resolution begins, paired with the scope it resolves under. The
-// liveness union (computeWantLive) interprets each through interpretSurface.
+// pendingSurface is one identifier known before resolution begins, paired with
+// the scope it resolves under. The liveness union (computeWantLive) interprets
+// each through interpretSurface.
 type pendingSurface struct {
 	input string
 	scope resolveScope
 }
 
-// baseSurfaces builds the flag-bound liveness surfaces every resolution driver
-// shares: the agent, the role flag (when set and not skipped by a none-token),
-// and one surface per --context selector. executeStart passes these straight to
+// baseSurfaces builds the liveness surfaces every resolution driver shares: the
+// launch agent identifier (--agent, or settings.default_agent when that flag is
+// omitted), the role flag (when set and not skipped by a none-token), and one
+// surface per --context selector. executeStart passes these straight to
 // computeWantLive; executeTask appends its task surface. The late task-declared
 // role is excluded — its name is unknown here and ensureTaskRoleLive handles it.
-func baseSurfaces(flags *Flags) []pendingSurface {
-	agent := ""
-	if len(flags.Agent) == 1 {
-		agent = flags.Agent[0]
-	}
-	surfaces := []pendingSurface{{agent, singleCategoryScope("agents", "agent", false)}}
+func baseSurfaces(flags *Flags, agentName string) []pendingSurface {
+	surfaces := []pendingSurface{{agentName, singleCategoryScope("agents", "agent", false)}}
 	if flags.Role != "" && !flags.NoRole {
 		surfaces = append(surfaces, pendingSurface{flags.Role, singleCategoryScope("roles", "role", true)})
 	}
@@ -200,9 +197,9 @@ func (r *resolver) ensureTaskRoleLive(declared string) {
 	r.forceLiveReResolve()
 }
 
-// resolveAgent resolves the --agent identifier to an installed agent name. An
-// agent is a structured configuration, not a document body, so a filesystem
-// path is rejected.
+// resolveAgent resolves an agent identifier (--agent or settings.default_agent)
+// to an installed agent name. An agent is a structured configuration, not a
+// document body, so a filesystem path is rejected.
 func (r *resolver) resolveAgent(name string) (string, error) {
 	return r.resolveSingle(name, singleCategoryScope("agents", "agent", false))
 }

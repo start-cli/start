@@ -156,6 +156,7 @@ func TestInterpretSurface_DriftGuard(t *testing.T) {
 		{"expert", roleScope(), surfaceName},
 		{"go-expert", roleScope(), surfaceName},
 		{"uninstalled-xyz", roleScope(), surfaceName},
+		{"grok/auto", agentScope(), surfaceName},
 	}
 
 	for _, tt := range tests {

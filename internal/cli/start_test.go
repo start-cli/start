@@ -1797,15 +1797,49 @@ func TestBuildExecutionEnv_DefaultAgentSet(t *testing.T) {
 	}`)
 
 	flags := &Flags{}
-	var buf bytes.Buffer
-	r := strings.NewReader("")
+	name, err := launchAgentName(flags, cfg.Value)
+	if err != nil {
+		t.Fatalf("launchAgentName: %v", err)
+	}
+	resolved, err := newTestResolver(cfg).resolveAgent(name)
+	if err != nil {
+		t.Fatalf("resolveAgent(%q): %v", name, err)
+	}
 
-	env, err := buildExecutionEnv(cfg, t.TempDir(), "", flags, &buf, io.Discard, r)
+	env, err := buildExecutionEnv(cfg, t.TempDir(), resolved, flags, io.Discard, io.Discard, strings.NewReader(""))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if env.Agent.Name != "copilot" {
 		t.Errorf("expected agent 'copilot', got %q", env.Agent.Name)
+	}
+}
+
+func TestBuildExecutionEnv_EmptyNameIgnoresDefault(t *testing.T) {
+	t.Parallel()
+	cfg := buildTestCfg(t, `{
+		settings: {
+			default_agent: "copilot"
+		}
+		agents: {
+			claude: {
+				bin: "claude"
+				command: "{{.bin}}"
+			}
+			copilot: {
+				bin: "gh"
+				command: "{{.bin}} copilot"
+			}
+		}
+	}`)
+
+	var buf bytes.Buffer
+	env, err := buildExecutionEnv(cfg, t.TempDir(), "", &Flags{}, &buf, io.Discard, strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if env.Agent.Name != "claude" {
+		t.Errorf("empty agentName should pick first installed agent, got %q", env.Agent.Name)
 	}
 }
 

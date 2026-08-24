@@ -140,17 +140,26 @@ func loadExecutionConfig(stdout, stderr io.Writer, stdin io.Reader, flags *Flags
 	return cfg, workingDir, nil
 }
 
-// resolveAgentName determines which agent to use when no --agent flag was provided.
-// It checks settings.default_agent, falls back to the only configured agent,
-// or prompts interactively when multiple agents exist and stdin is a TTY.
-func resolveAgentName(cfg internalcue.LoadResult, flags *Flags, stdout, stderr io.Writer, stdin io.Reader) (string, error) {
-	if def := cfg.Value.LookupPath(cue.ParsePath(internalcue.KeySettings + ".default_agent")); def.Exists() {
-		if s, err := def.String(); err == nil && s != "" {
-			debugf(stderr, flags, dbgAgent, "Selected %q (config default)", s)
-			return s, nil
-		}
+// launchAgentName returns the agent identifier for this launch: --agent if
+// supplied, otherwise settings.default_agent when set. An empty result means
+// fall through to the installed-only picker in resolveAgentName. --agent wins
+// over the default; multiple --agent values are a usage error on launch.
+func launchAgentName(flags *Flags, cfg cue.Value) (string, error) {
+	switch len(flags.Agent) {
+	case 0:
+		return getDefaultAgentFromConfig(cfg), nil
+	case 1:
+		return flags.Agent[0], nil
+	default:
+		return "", usageError(fmt.Errorf("launch accepts at most one --agent"))
 	}
+}
 
+// resolveAgentName is the installed-only picker used when the agent surface had
+// no identifier: the only configured agent, a TTY menu, or the first agent on a
+// non-TTY. settings.default_agent is an identifier for launchAgentName, not a
+// picker choice.
+func resolveAgentName(cfg internalcue.LoadResult, flags *Flags, stdout, stderr io.Writer, stdin io.Reader) (string, error) {
 	choices, err := getConfiguredAgents(cfg.Value)
 	if err != nil {
 		return "", err
@@ -190,7 +199,7 @@ func resolveAgentName(cfg internalcue.LoadResult, flags *Flags, stdout, stderr i
 }
 
 // buildExecutionEnv builds the execution environment from a loaded config and
-// agent name, after the resolver has resolved flag values.
+// agent name, after the resolver has resolved the launch agent identifier.
 func buildExecutionEnv(cfg internalcue.LoadResult, workingDir string, agentName string, flags *Flags, stdout, stderr io.Writer, stdin io.Reader) (*ExecutionEnv, error) {
 	if agentName == "" {
 		resolved, err := resolveAgentName(cfg, flags, stdout, stderr, stdin)
@@ -199,7 +208,7 @@ func buildExecutionEnv(cfg internalcue.LoadResult, workingDir string, agentName 
 		}
 		agentName = resolved
 	} else {
-		debugf(stderr, flags, dbgAgent, "Selected %q (--agent flag)", agentName)
+		debugf(stderr, flags, dbgAgent, "Selected %q", agentName)
 	}
 
 	agent, err := orchestration.ExtractAgent(cfg.Value, agentName)
@@ -372,19 +381,20 @@ func executeStart(stdout, stderr io.Writer, stdin io.Reader, flags *Flags, selec
 		return err
 	}
 
-	r := newResolver(cfg, flags, stdout, stderr, stdin)
-
-	// Decide index liveness once, up front, over every flag-bound surface: live
-	// iff --refresh is set or some surface has no installed match. Computed before
-	// the first resolve so the choice is position-independent and the held index
-	// serves the whole invocation. selection.Tags equals flags.Context here, so
-	// baseSurfaces covers the contexts this invocation will resolve.
-	r.wantLive = r.computeWantLive(baseSurfaces(flags))
-
-	agentName, err := launchAgentName(flags)
+	agentName, err := launchAgentName(flags, cfg.Value)
 	if err != nil {
 		return err
 	}
+
+	r := newResolver(cfg, flags, stdout, stderr, stdin)
+
+	// Decide index liveness once, up front: live iff --refresh is set or some
+	// surface has no installed match. Computed before the first resolve so the
+	// choice is position-independent and the held index serves the whole
+	// invocation. selection.Tags equals flags.Context here, so baseSurfaces
+	// covers the contexts this invocation will resolve.
+	r.wantLive = r.computeWantLive(baseSurfaces(flags, agentName))
+
 	if agentName != "" {
 		agentName, err = r.resolveAgent(agentName)
 		if err != nil {

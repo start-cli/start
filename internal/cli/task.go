@@ -90,19 +90,20 @@ func executeTask(stdout, stderr io.Writer, stdin io.Reader, flags *Flags, taskNa
 		return err
 	}
 
-	r := newResolver(cfg, flags, stdout, stderr, stdin)
-
-	// Decide index liveness once, up front, over every flag/arg-bound surface
-	// (agent, role flag, contexts, task). The task-declared role is late-bound —
-	// its name lives in the task content — so it is excluded here and carries its
-	// own targeted liveness check (ensureTaskRoleLive) after the task resolves.
-	surfaces := append(baseSurfaces(flags), pendingSurface{taskName, singleCategoryScope("tasks", "task", false)})
-	r.wantLive = r.computeWantLive(surfaces)
-
-	agentName, err := launchAgentName(flags)
+	agentName, err := launchAgentName(flags, cfg.Value)
 	if err != nil {
 		return err
 	}
+
+	r := newResolver(cfg, flags, stdout, stderr, stdin)
+
+	// Decide index liveness once, up front, over every known surface. The
+	// task-declared role is late-bound — its name lives in the task content —
+	// so it is excluded here and carries its own targeted liveness check
+	// (ensureTaskRoleLive) after the task resolves.
+	surfaces := append(baseSurfaces(flags, agentName), pendingSurface{taskName, singleCategoryScope("tasks", "task", false)})
+	r.wantLive = r.computeWantLive(surfaces)
+
 	if agentName != "" {
 		agentName, err = r.resolveAgent(agentName)
 		if err != nil {
